@@ -66,8 +66,10 @@ emulator *mode: (build "debug")
         avd="$HOME/.android/avd/chat37fold.avd"
         [ -d "$avd" ] || echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" -s create avd -n chat37fold \
             -k "system-images;android-37.0;default;x86_64" -d pixel_9_pro_fold
-        # The laptop's keyboard types into the app, and the window draws with its GPU.
-        sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' "$avd/config.ini"
+        # The laptop's keyboard types into the app, and the window draws with its GPU. Folded, it
+        # shows the middle of the screen, where Android draws once the loop below shrinks it.
+        sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' \
+            -e 's/^hw.displayRegion.0.1.xOffset=.*/hw.displayRegion.0.1.xOffset=498/' "$avd/config.ini"
         # Drawn on the laptop's GPU: left to choose, the emulator distrusts the driver and draws in
         # software. And more of the laptop than its defaults (4 cores, 2 GB): 6 is the most it takes.
         set -- -gpu host -cores 6 -memory 4096
@@ -78,6 +80,22 @@ emulator *mode: (build "debug")
         setsid nohup "$sdk/emulator/emulator" -avd chat37fold -no-audio -no-boot-anim -accel on "$@" >"$log" 2>&1 &
         {{adb}} wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
     fi
+    # Folded, this image tells apps so but keeps the inner screen's size, of which the emulator then
+    # shows a part. A loop on the emulator gives Android the outer screen's size while it's folded;
+    # one only, as it may have woken from its snapshot with one running.
+    fold='pid=/data/local/tmp/chat-fold.pid
+    [ -f $pid ] && grep -qs chat-fold /proc/$(cat $pid)/cmdline && exit
+    echo $$ >$pid
+    was=
+    while :; do
+        now=$(cmd device_state print-state)
+        if [ "$now" != "$was" ]; then
+            if [ "$now" = 1 ]; then wm size 1080x2152; else wm size reset; fi
+            was=$now
+        fi
+        sleep 0.5
+    done'
+    {{adb}} shell "setsid sh -c '$fold' chat-fold </dev/null >/dev/null 2>&1 &"
     {{adb}} install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
     {{adb}} shell am start -n moe.vin.chat/.ui.MainActivity >/dev/null
     echo "chat is open on the emulator"
