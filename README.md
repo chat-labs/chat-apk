@@ -43,9 +43,16 @@ You need a JDK (17 or later), CMake, and chat's source next to this folder (`../
 just setup           # the Android SDK, NDK and emulator, into ~/.local/share/android-sdk (or ANDROID_HOME)
 just build           # a debug APK in app/build/outputs/apk/debug/
 just build release   # a release APK, shrunk, signed with the local test key
-just emulator        # an Android 17 emulator without a window
-just run             # build, install on the phone or emulator, and start it
+just run             # build, install on the connected phone (or the emulator, opened in a window) and start it
+just emulator        # the Android 17 emulator in a window, typing with your own keyboard (headless: without one)
+just emulator-stop   # stop it
+just peer            # desktop chat from ../chat, with the relays always on, to talk to the app on the emulator
 ```
+
+The emulator sits behind a NAT of its own, where neither the LAN nor the DHT finds it, so desktop
+chat and the app meet on the Nostr relays (`just peer` turns them on), or through Tor. Copy an
+invite in one and paste it in the other, with clipboard sharing on in the emulator (its Extended
+controls, Settings).
 
 Android 9 or later. Release builds are signed with the same local test key as debug builds for
 now, so they're for trying out, not for passing around.

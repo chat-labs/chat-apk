@@ -39,23 +39,53 @@ build kind="debug":
     esac
     ls -1 app/build/outputs/apk/"$1"/*.apk
 
-# Build, then install on the connected phone or emulator and start it
+# Build, then install on the connected phone, or the emulator in a window if none is, and open chat
 [group('run')]
 run kind="debug": (build kind)
-    {{adb}} install -r app/build/outputs/apk/{{kind}}/app-{{kind}}.apk
-    {{adb}} shell am start -n moe.vin.chat/.ui.MainActivity
+    #!/bin/sh
+    set -eu
+    {{adb}} get-state >/dev/null 2>&1 || {{quote(just_executable())}} emulator
+    {{adb}} install -r app/build/outputs/apk/{{kind}}/app-{{kind}}.apk >/dev/null
+    {{adb}} shell am start -n moe.vin.chat/.ui.MainActivity >/dev/null
+    echo "chat is open"
 
-# Start the test emulator (Android 17, x86_64) without a window
+# Start the test emulator (Android 17, x86_64): in a window to use it (the default), or headless
 [group('run')]
-emulator:
+emulator mode="window":
     #!/bin/sh
     set -eu
     sdk={{quote(sdk)}}
-    [ -d "$HOME/.android/avd/chat37.avd" ] || echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" -s create avd -n chat37 \
+    if {{adb}} get-state >/dev/null 2>&1; then echo "a phone or emulator is connected already"; exit 0; fi
+    avd="$HOME/.android/avd/chat37.avd"
+    [ -d "$avd" ] || echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" -s create avd -n chat37 \
         -k "system-images;android-37.0;default;x86_64" -d pixel_6
-    "$sdk/emulator/emulator" -avd chat37 -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -accel on &
+    # The laptop's keyboard types into the app, and the window draws with its GPU.
+    sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' "$avd/config.ini"
+    case "$1" in
+        window) set -- -gpu auto ;;
+        headless) set -- -no-window -gpu swiftshader_indirect ;;
+        *) echo "just emulator takes window or headless, not $1" >&2; exit 1 ;;
+    esac
+    log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-gui/emulator.log"
+    mkdir -p "$(dirname "$log")"
+    setsid nohup "$sdk/emulator/emulator" -avd chat37 -no-audio -no-boot-anim -accel on "$@" >"$log" 2>&1 &
     {{adb}} wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
-    echo "emulator up"
+    echo "emulator up (its log: $log)"
+
+# Stop the emulator
+[group('run')]
+emulator-stop:
+    {{adb}} emu kill
+
+# Desktop chat from ../chat, with the relays always on, to talk to the app on the emulator
+[group('run')]
+peer *args:
+    #!/bin/sh
+    set -eu
+    [ -x ../chat/build/chat ] || (cd ../chat && just build)
+    # The emulator sits behind a NAT of its own, where neither the LAN nor the DHT finds it, so the
+    # two meet on the relays.
+    exec ../chat/build/chat --nostr always "$@"
 
 # Remove build output
 [group('build')]
