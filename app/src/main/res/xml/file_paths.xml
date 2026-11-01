@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What another app can be handed to open: files saved from peers, and nothing else. -->
+<paths>
+    <files-path name="received" path="received/" />
+</paths>

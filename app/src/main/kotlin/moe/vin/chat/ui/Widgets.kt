@@ -1,0 +1,255 @@
+package moe.vin.chat.ui
+
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+
+// A text field the keyboard doesn't learn from: Android's incognito flag, which Compose's own fields
+// can't set, and nothing offered to autofill.
+@Composable
+fun PrivateField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    password: Boolean = false,
+    multiLine: Boolean = false,
+    mono: Boolean = false,
+    onDone: (() -> Unit)? = null,
+    focus: Boolean = false,
+) {
+    val p = LocalPalette.current
+    val change by rememberUpdatedState(onValueChange)
+    val done by rememberUpdatedState(onDone)
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            EditText(ctx).apply {
+                background = null
+                setPadding(0, 0, 0, 0)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or EditorInfo.IME_FLAG_NO_EXTRACT_UI or
+                    (if (onDone != null && !multiLine) EditorInfo.IME_ACTION_DONE else EditorInfo.IME_ACTION_NONE)
+                inputType = when {
+                    password -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    multiLine -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    mono -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                }
+                // A password field's typeface is monospace unless it's set again after its input type.
+                typeface = if (mono) android.graphics.Typeface.MONOSPACE else android.graphics.Typeface.DEFAULT
+                if (multiLine) {
+                    minLines = 1
+                    maxLines = 6
+                } else {
+                    isSingleLine = true
+                }
+                setHint(placeholder)
+                setText(value)
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: Editable?) = change(s?.toString().orEmpty())
+                })
+                setOnEditorActionListener { _, _, _ -> done?.invoke(); done != null }
+                if (focus) post { requestFocus() }
+            }
+        },
+        update = { et ->
+            et.setTextColor(p.text.toArgb())
+            et.setHintTextColor(p.faint.toArgb())
+            et.highlightColor = p.accent.copy(alpha = 0.35f).toArgb()
+            if (et.text.toString() != value) {
+                et.setText(value)
+                et.setSelection(value.length)
+            }
+        },
+    )
+}
+
+@Composable
+fun Field(label: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val p = LocalPalette.current
+    Column(modifier) {
+        Text(label.uppercase(), style = Type.section, color = p.faint)
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.surface)
+                .border(1.dp, p.line, RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+        ) { content() }
+    }
+}
+
+@Composable
+fun TopBar(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
+    val p = LocalPalette.current
+    Column(Modifier.background(p.bg).statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) IconAction(Icons.Back, "Back", onBack) else Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                Text(title, style = Type.title.copy(fontSize = 18.sp), color = p.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle != null) Text(subtitle, style = Type.label, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            actions()
+        }
+        HorizontalDivider(color = p.line, thickness = 1.dp)
+    }
+}
+
+@Composable
+fun IconAction(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color = LocalPalette.current.text, enabled: Boolean = true) {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = 0.35f), modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+fun Button(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, primary: Boolean = true, icon: ImageVector? = null) {
+    val p = LocalPalette.current
+    val bg = if (primary) p.accent else Color.Transparent
+    val fg = if (primary) p.onAccent else p.text
+    Row(
+        modifier.height(46.dp).clip(RoundedCornerShape(10.dp)).background(if (enabled) bg else bg.copy(alpha = 0.4f))
+            .then(if (primary) Modifier else Modifier.border(1.dp, p.line, RoundedCornerShape(10.dp)))
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(text, style = Type.small.copy(fontWeight = FontWeight.SemiBold), color = if (enabled) fg else fg.copy(alpha = 0.6f))
+    }
+}
+
+@Composable
+fun Tag(text: String, color: Color = LocalPalette.current.muted, modifier: Modifier = Modifier) {
+    Text(
+        text, style = Type.label, color = color, maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(6.dp)).border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+fun Section(title: String, modifier: Modifier = Modifier) {
+    Text(title.uppercase(), style = Type.section, color = LocalPalette.current.faint, modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp))
+}
+
+@Composable
+fun RowItem(title: String, subtitle: String? = null, onClick: (() -> Unit)? = null, leading: ImageVector? = null, trailing: @Composable (() -> Unit)? = null) {
+    val p = LocalPalette.current
+    Row(
+        Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 20.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leading != null) {
+            Icon(leading, null, tint = p.muted, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(16.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = Type.body, color = p.text)
+            if (subtitle != null) Text(subtitle, style = Type.small, color = p.muted)
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
+        }
+    }
+}
+
+@Composable
+fun Toggle(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val p = LocalPalette.current
+    RowItem(title, subtitle, onClick = { onChange(!checked) }) {
+        Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent, uncheckedTrackColor = p.raised,
+                uncheckedThumbColor = p.muted, uncheckedBorderColor = p.line),
+        )
+    }
+}
+
+// Several choices, one picked: a row of segments.
+@Composable
+fun Choice(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    val p = LocalPalette.current
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, p.line, RoundedCornerShape(10.dp)).padding(3.dp)) {
+        for ((key, label) in options) {
+            val on = key == selected
+            Box(
+                Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(8.dp)).background(if (on) p.raised else Color.Transparent)
+                    .clickable { onSelect(key) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = Type.small.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal), color = if (on) p.text else p.muted)
+            }
+        }
+    }
+}
+
+@Composable
+fun Hairline() = HorizontalDivider(color = LocalPalette.current.line, thickness = 1.dp)
+
+// chat's own QR code of an invite, dark on light whatever the theme, with the border scanners need.
+@Composable
+fun QrCode(rows: List<String>, modifier: Modifier = Modifier) {
+    Canvas(modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp)).background(Color.White)) {
+        val n = rows.size + 8
+        val cell = size.width / n
+        rows.forEachIndexed { y, row ->
+            row.forEachIndexed { x, c ->
+                if (c == '1') drawRect(Color.Black, Offset((x + 4) * cell, (y + 4) * cell), Size(cell + 0.6f, cell + 0.6f))
+            }
+        }
+    }
+}
