@@ -89,8 +89,10 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
         Notifications.clear(ctx, room.id)
         onDispose { room.visible = false }
     }
-    var text by remember { mutableStateOf(Shared.text?.also { Shared.text = null }.orEmpty()) }
-    var replyTo by remember { mutableStateOf<Item?>(null) }
+    val thread = dm.orEmpty()
+    LaunchedEffect(room) { Shared.text?.let { room.drafts[thread] = it; Shared.text = null } }
+    val text = room.drafts[thread].orEmpty()
+    val replyTo = if (dm == null) room.replyTo else null
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { offer(ctx, room, it) } }
     LaunchedEffect(room.status) {
         if (room.status == Status.OPEN) Shared.file?.let { offer(ctx, room, it); Shared.file = null }
@@ -124,7 +126,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
             LaunchedEffect(err) { delay(6000); if (room.error == err) room.error = null }
         }
         val items = if (dm != null) room.items.filter { it.line.direct && it.line.peer == dm } else room.items
-        Messages(room, items.asReversed(), Modifier.weight(1f), dm == null, onReply = { replyTo = it }, onDm = { nav.go(Screen.Chat(roomId, it)) })
+        Messages(room, items.asReversed(), Modifier.weight(1f), dm == null, onReply = { room.replyTo = it }, onDm = { nav.go(Screen.Chat(roomId, it)) })
         replyTo?.let { r ->
             Row(Modifier.fillMaxWidth().background(p.surface).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Reply, null, tint = p.accent, modifier = Modifier.size(16.dp))
@@ -132,7 +134,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
                     Text("Answering ${r.line.nick ?: ""}", style = Type.label, color = p.accent)
                     Text(body(r).second, style = Type.small, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                IconAction(Icons.Close, "Don't answer", { replyTo = null }, tint = p.muted)
+                IconAction(Icons.Close, "Don't answer", { room.replyTo = null }, tint = p.muted)
             }
         }
         Hairline()
@@ -143,7 +145,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
                 Modifier.weight(1f).padding(horizontal = 4.dp).clip(RoundedCornerShape(20.dp)).background(p.surface)
                     .border(1.dp, p.line, RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
             ) {
-                PrivateField(text, { text = it }, Modifier.fillMaxWidth(), placeholder = if (dmPeer != null) "Only ${dmPeer.nick} gets this" else "Message", multiLine = true)
+                PrivateField(text, { room.drafts[thread] = it }, Modifier.fillMaxWidth(), placeholder = if (dmPeer != null) "Only ${dmPeer.nick} gets this" else "Message", multiLine = true)
                 if (bytes > TEXT_MAX - 120) Text("${TEXT_MAX - bytes}", style = Type.label, color = if (bytes > TEXT_MAX) p.bad else p.faint, modifier = Modifier.align(Alignment.End))
             }
             val canSend = text.isNotBlank() && bytes <= TEXT_MAX && room.status == Status.OPEN
@@ -155,8 +157,8 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
                     mid != null -> room.reply(mid, t)
                     else -> room.say(t)
                 }
-                text = ""
-                replyTo = null
+                room.drafts.remove(thread)
+                room.replyTo = null
             }, tint = p.accent, enabled = canSend)
         }
     }

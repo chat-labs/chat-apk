@@ -45,8 +45,18 @@ import moe.vin.chat.store.RoomEntry
 private class RoomRow(val id: String, val title: String, val room: Room?, val entry: RoomEntry?)
 
 @Composable
-fun RoomsScreen(nav: Nav) {
+fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
     val p = LocalPalette.current
+    // Beside the open room, a room or a page replaces it rather than going on top.
+    fun show(s: Screen) = if (twoPane) nav.home(s) else nav.go(s)
+    val selected = when (val t = nav.top) {
+        is Screen.Chat -> t.room
+        is Screen.Peers -> t.room
+        is Screen.PeerInfo -> t.room
+        is Screen.Invite -> t.room
+        is Screen.RoomSettings -> t.room
+        else -> null
+    }
     val tor = Hub.tor.state
     val subtitle = when (tor.phase) {
         Tor.Phase.STARTING -> "tor ${tor.progress}% · ${tor.message.orEmpty()}"
@@ -58,7 +68,7 @@ fun RoomsScreen(nav: Nav) {
         for (e in Hub.kept) add(RoomRow(e.id, Hub.rooms[e.id]?.title?.takeIf { it.isNotBlank() } ?: e.title, Hub.rooms[e.id], e))
         for (r in Hub.rooms.values) if (Hub.kept.none { it.id == r.id }) add(RoomRow(r.id, r.title.ifBlank { "new room" }, r, null))
     }
-    Page("chat", subtitle, actions = { IconAction(Icons.Sliders, "Settings", { nav.go(Screen.Settings) }) }) {
+    Page("chat", subtitle, actions = { IconAction(Icons.Sliders, "Settings", { show(Screen.Settings) }) }) {
         if (Shared.file != null || Shared.text != null) {
             Row(
                 Modifier.fillMaxWidth().background(p.surface).padding(horizontal = 20.dp, vertical = 12.dp),
@@ -85,10 +95,10 @@ fun RoomsScreen(nav: Nav) {
         } else {
             LazyColumn(Modifier.weight(1f)) {
                 items(rows, key = { it.id }) { row ->
-                    RoomItem(row) {
+                    RoomItem(row, twoPane && row.id == selected) {
                         val entry = row.entry
                         if (row.room == null && entry != null) Hub.open(entry)
-                        nav.go(Screen.Chat(row.id))
+                        show(Screen.Chat(row.id))
                     }
                     Hairline()
                 }
@@ -96,19 +106,23 @@ fun RoomsScreen(nav: Nav) {
         }
         Hairline()
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button("New room", { nav.go(Screen.New) }, Modifier.weight(1f), icon = Icons.Plus)
-            Button("Join", { nav.go(Screen.Join()) }, Modifier.weight(1f), primary = false, icon = Icons.Join)
+            Button("New room", { show(Screen.New) }, Modifier.weight(1f), icon = Icons.Plus)
+            Button("Join", { show(Screen.Join()) }, Modifier.weight(1f), primary = false, icon = Icons.Join)
         }
     }
 }
 
 @Composable
-private fun RoomItem(row: RoomRow, onClick: () -> Unit) {
+private fun RoomItem(row: RoomRow, selected: Boolean, onClick: () -> Unit) {
     val p = LocalPalette.current
     val room = row.room
     val route = room?.info?.route ?: row.entry?.route ?: "udp"
     val status = if (room == null) "kept · not open" else roomState(room)
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().background(if (selected) p.raised else p.bg).clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(p.raised),
             contentAlignment = Alignment.Center,

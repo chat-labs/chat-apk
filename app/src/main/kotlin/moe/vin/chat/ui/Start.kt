@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,7 +90,9 @@ fun SetupScreen() {
         else -> null
     }
     Column(
-        Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp),
+        // Unfolded or on a tablet, a readable width in the middle rather than lines across the screen.
+        Modifier.fillMaxSize().systemBarsPadding().imePadding().wrapContentWidth().widthIn(max = 560.dp)
+            .verticalScroll(rememberScrollState()).padding(horizontal = 22.dp),
     ) {
         Spacer(Modifier.height(36.dp))
         Text("chat", style = Type.title.copy(fontSize = Type.title.fontSize * 1.4f), color = p.text)
@@ -168,7 +172,10 @@ fun UnlockScreen() {
         }
     }
     LaunchedEffect(Unit) { if (mode?.needsPassphrase == false) open() }
-    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(horizontal = 22.dp), verticalArrangement = Arrangement.Center) {
+    Column(
+        Modifier.fillMaxSize().systemBarsPadding().imePadding().wrapContentWidth().widthIn(max = 560.dp).padding(horizontal = 22.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text("chat", style = Type.title.copy(fontSize = Type.title.fontSize * 1.4f), color = p.text)
         Spacer(Modifier.height(8.dp))
         Text(if (mode?.needsPassphrase == true) "Sealed. Its passphrase opens it." else "Opening with this phone's key…", style = Type.body, color = p.muted)

@@ -12,20 +12,41 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Rect
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import kotlinx.coroutines.launch
 import moe.vin.chat.BuildConfig
 import moe.vin.chat.Hub
 import moe.vin.chat.service.Notifications
@@ -64,6 +85,15 @@ class Nav {
     }
 }
 
+// A fold or hinge across the window: where it is, in window pixels, and which way it runs.
+data class Hinge(val bounds: Rect, val vertical: Boolean, val halfOpened: Boolean)
+
+// What outlives the activity: where the user is, and the fold the window has now.
+object Ui {
+    val nav = Nav()
+    var hinge by mutableStateOf<Hinge?>(null)
+}
+
 // What the share sheet handed over, waiting for a room to go to.
 object Shared {
     var text by mutableStateOf<String?>(null)
@@ -76,7 +106,7 @@ object Shared {
 }
 
 class MainActivity : ComponentActivity() {
-    private val nav = Nav()
+    private val nav get() = Ui.nav
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +116,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         Hub.pictureMax = minOf(1024, resources.displayMetrics.widthPixels)
         handle(intent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                WindowInfoTracker.getOrCreate(this@MainActivity).windowLayoutInfo(this@MainActivity).collect { info ->
+                    Ui.hinge = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()?.let {
+                        Hinge(it.bounds, it.orientation == FoldingFeature.Orientation.VERTICAL, it.state == FoldingFeature.State.HALF_OPENED)
+                    }
+                }
+            }
+        }
         setContent { ChatTheme { Root(nav) } }
     }
 
@@ -134,19 +173,64 @@ fun Root(nav: Nav) {
             Hub.Phase.READY -> {
                 AskForNotifications()
                 BackHandler(enabled = nav.stack.size > 1) { nav.back() }
-                when (val s = nav.top) {
-                    Screen.Rooms -> RoomsScreen(nav)
-                    is Screen.Chat -> ChatScreen(nav, s.room, s.dm)
-                    is Screen.Peers -> PeersScreen(nav, s.room)
-                    is Screen.PeerInfo -> PeerScreen(nav, s.room, s.peer)
-                    is Screen.Invite -> InviteScreen(nav, s.room)
-                    is Screen.RoomSettings -> RoomSettingsScreen(nav, s.room)
-                    Screen.New -> NewRoomScreen(nav)
-                    is Screen.Join -> JoinScreen(nav, s.invite)
-                    Screen.Settings -> SettingsScreen(nav)
-                }
+                Panes(nav)
             }
         }
+    }
+}
+
+// Narrower than this, one screen at a time.
+private val TWO_PANES = 600.dp
+private val LIST_WIDTH = 360.dp
+
+// Unfolded, or on a tablet, the rooms on the left and what's open on the right. On a foldable the
+// two meet at the fold, so nothing sits across the hinge.
+@Composable
+private fun Panes(nav: Nav) {
+    val p = LocalPalette.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth < TWO_PANES) {
+            ScreenFor(nav, nav.top)
+            return@BoxWithConstraints
+        }
+        val density = LocalDensity.current
+        val fold = Ui.hinge?.takeIf { it.vertical && it.bounds.left > 0 }
+        var list: Dp = LIST_WIDTH
+        var gap: Dp = 0.dp
+        if (fold != null) with(density) {
+            list = fold.bounds.left.toDp()
+            gap = fold.bounds.width().toDp()
+        }
+        list = list.coerceIn(280.dp, maxWidth - 320.dp)
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.width(list).fillMaxHeight()) { RoomsScreen(nav, twoPane = true) }
+            if (gap > 0.dp) Spacer(Modifier.width(gap).fillMaxHeight().background(p.bg))
+            else VerticalDivider(color = p.line)
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                if (nav.top == Screen.Rooms) Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Pick a room, or make one", style = Type.small, color = p.faint, textAlign = TextAlign.Center)
+                } else ScreenFor(nav, nav.top)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScreenFor(nav: Nav, s: Screen) {
+    when (s) {
+        Screen.Rooms -> RoomsScreen(nav)
+        is Screen.Chat -> ChatScreen(nav, s.room, s.dm)
+        is Screen.Peers -> PeersScreen(nav, s.room)
+        is Screen.PeerInfo -> PeerScreen(nav, s.room, s.peer)
+        is Screen.Invite -> InviteScreen(nav, s.room)
+        is Screen.RoomSettings -> RoomSettingsScreen(nav, s.room)
+        Screen.New -> NewRoomScreen(nav)
+        is Screen.Join -> JoinScreen(nav, s.invite)
+        Screen.Settings -> SettingsScreen(nav)
     }
 }
 

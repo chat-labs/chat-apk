@@ -41,6 +41,10 @@ class Room(val id: String, var label: String, private val host: RoomHost) {
     var mentions by mutableIntStateOf(0)
     var error by mutableStateOf<String?>(null)
     var history by mutableStateOf(false)
+    // What's being typed, by thread ("" the room, else the peer a direct thread is with), and the
+    // message being answered: kept here so folding or switching rooms loses neither.
+    val drafts = mutableStateMapOf<String, String>()
+    var replyTo by mutableStateOf<Item?>(null)
     var visible = false
     var process: ChatProcess? = null
     private var seq = 0L
