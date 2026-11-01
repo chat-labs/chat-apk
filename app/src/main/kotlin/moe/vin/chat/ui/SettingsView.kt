@@ -126,7 +126,7 @@ fun SettingsScreen(nav: Nav) {
                 style = Type.small, color = p.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
             Section("Privacy")
-            Toggle("Only to compared codes", "Send nothing to a peer until you've compared verify codes with them", s.verify == "required") {
+            Toggle("Require peer verification", "Send nothing to a peer until you've compared verify codes with them", s.verify == "required") {
                 set(Hub.settings.copy(verify = if (it) "required" else "optional"))
             }
             Toggle("Noise in pictures", "A JPEG you send also gets noise nobody can see, on top of what's always taken out", s.noise) { set(Hub.settings.copy(noise = it)) }
