@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Rect
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -88,10 +90,12 @@ class Nav {
 // A fold or hinge across the window: where it is, in window pixels, and which way it runs.
 data class Hinge(val bounds: Rect, val vertical: Boolean, val halfOpened: Boolean)
 
-// What outlives the activity: where the user is, and the fold the window has now.
+// What outlives the activity: where the user is, the fold the window has now, and whether the
+// rooms beside an open room are hidden.
 object Ui {
     val nav = Nav()
     var hinge by mutableStateOf<Hinge?>(null)
+    var roomsHidden by mutableStateOf(false)
 }
 
 // What the share sheet handed over, waiting for a room to go to.
@@ -202,10 +206,16 @@ private fun Panes(nav: Nav) {
             gap = fold.bounds.width().toDp()
         }
         list = list.coerceIn(280.dp, maxWidth - 320.dp)
+        // With nothing open beside them, the rooms are all there is to show.
+        val hidden = Ui.roomsHidden && nav.top != Screen.Rooms
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.width(list).fillMaxHeight()) { RoomsScreen(nav, twoPane = true) }
-            if (gap > 0.dp) Spacer(Modifier.width(gap).fillMaxHeight().background(p.bg))
-            else VerticalDivider(color = p.line)
+            AnimatedVisibility(!hidden) {
+                Row(Modifier.fillMaxHeight()) {
+                    Box(Modifier.width(list).fillMaxHeight()) { RoomsScreen(nav, twoPane = true) }
+                    if (gap > 0.dp) Spacer(Modifier.width(gap).fillMaxHeight().background(p.bg))
+                    else VerticalDivider(color = p.line)
+                }
+            }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 if (nav.top == Screen.Rooms) Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -213,7 +223,9 @@ private fun Panes(nav: Nav) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("Pick a room, or make one", style = Type.small, color = p.faint, textAlign = TextAlign.Center)
-                } else ScreenFor(nav, nav.top)
+                } else CompositionLocalProvider(
+                    LocalSidebar provides SidebarButton(if (hidden) "Show rooms" else "Hide rooms") { Ui.roomsHidden = !hidden },
+                ) { ScreenFor(nav, nav.top) }
             }
         }
     }

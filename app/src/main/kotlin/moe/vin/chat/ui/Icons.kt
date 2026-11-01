@@ -43,5 +43,6 @@ object Icons {
     val Join = icon("join", "M10 17 L15 12 L10 7 M15 12 H3 M14 4 H20 V20 H14")
     val Key = icon("key", "M8 16 a4 4 0 1 1 0 -8 a4 4 0 1 1 0 8 Z M12 12 H21 M18 12 V15 M15 12 V14")
     val Open = icon("open", "M14 4 H20 V10 M20 4 L11 13 M18 14 V20 H4 V6 H10")
+    val Sidebar = icon("sidebar", "M4 5 H20 V19 H4 Z M9.5 5 V19")
     val Mail = icon("dm", "M4 6 H20 V18 H4 Z M4 7 L12 13 L20 7")
 }

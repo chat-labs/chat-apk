@@ -31,6 +31,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -124,12 +125,19 @@ fun Field(label: String, modifier: Modifier = Modifier, content: @Composable () 
     }
 }
 
+// Beside the rooms, the button on a page's top bar that hides or shows them.
+class SidebarButton(val label: String, val onClick: () -> Unit)
+
+val LocalSidebar = compositionLocalOf<SidebarButton?> { null }
+
 @Composable
 fun TopBar(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
     val p = LocalPalette.current
+    val sidebar = LocalSidebar.current
     Column(Modifier.background(p.bg).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (onBack != null) IconAction(Icons.Back, "Back", onBack) else Spacer(Modifier.width(12.dp))
+            if (sidebar != null) IconAction(Icons.Sidebar, sidebar.label, sidebar.onClick)
+            if (onBack != null) IconAction(Icons.Back, "Back", onBack) else if (sidebar == null) Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                 Text(title, style = Type.title.copy(fontSize = 18.sp), color = p.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (subtitle != null) Text(subtitle, style = Type.label, color = p.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
