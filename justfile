@@ -39,7 +39,7 @@ build kind="debug":
     esac
     ls -1 app/build/outputs/apk/"$1"/*.apk
 
-# Build, then install on the connected phone, or the emulator in a window if none is, and open chat
+# Build, then install on the connected phone, or the emulator if none is, and open chat
 [group('run')]
 run kind="debug": (build kind)
     #!/bin/sh
@@ -49,33 +49,42 @@ run kind="debug": (build kind)
     {{adb}} shell am start -n moe.vin.chat/.ui.MainActivity >/dev/null
     echo "chat is open"
 
-# Start the test emulator (Android 17, x86_64): in a window to use it (the default), or headless
+# The test emulator, a foldable (Pixel 9 Pro Fold, Android 17), with chat built, installed and open; fresh: wiped first
 [group('run')]
-emulator mode="window":
+emulator *mode: (build "debug")
     #!/bin/sh
     set -eu
     sdk={{quote(sdk)}}
-    if {{adb}} get-state >/dev/null 2>&1; then echo "a phone or emulator is connected already"; exit 0; fi
-    avd="$HOME/.android/avd/chat37.avd"
-    [ -d "$avd" ] || echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" -s create avd -n chat37 \
-        -k "system-images;android-37.0;default;x86_64" -d pixel_6
-    # The laptop's keyboard types into the app, and the window draws with its GPU.
-    sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' "$avd/config.ini"
-    case "$1" in
-        window) set -- -gpu auto ;;
-        headless) set -- -no-window -gpu swiftshader_indirect ;;
-        *) echo "just emulator takes window or headless, not $1" >&2; exit 1 ;;
+    case "${1:-}" in
+        "") fresh= ;;
+        fresh) fresh=1 ;;
+        *) echo "just emulator takes fresh or nothing, not $1" >&2; exit 1 ;;
     esac
-    log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-gui/emulator.log"
-    mkdir -p "$(dirname "$log")"
-    setsid nohup "$sdk/emulator/emulator" -avd chat37 -no-audio -no-boot-anim -accel on "$@" >"$log" 2>&1 &
-    {{adb}} wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
-    echo "emulator up (its log: $log)"
+    if {{adb}} get-state >/dev/null 2>&1; then
+        if [ -n "$fresh" ]; then echo "an emulator is running: just emulator-stop first" >&2; exit 1; fi
+    else
+        avd="$HOME/.android/avd/chat37fold.avd"
+        [ -d "$avd" ] || echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" -s create avd -n chat37fold \
+            -k "system-images;android-37.0;default;x86_64" -d pixel_9_pro_fold
+        # The laptop's keyboard types into the app, and the window draws with its GPU.
+        sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' "$avd/config.ini"
+        # Fresh: its storage wiped, and the memory it saved when it last closed skipped.
+        set -- -gpu auto
+        if [ -n "$fresh" ]; then set -- "$@" -wipe-data -no-snapshot-load; fi
+        log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-gui/emulator.log"
+        mkdir -p "$(dirname "$log")"
+        setsid nohup "$sdk/emulator/emulator" -avd chat37fold -no-audio -no-boot-anim -accel on "$@" >"$log" 2>&1 &
+        {{adb}} wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+    fi
+    {{adb}} install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
+    {{adb}} shell am start -n moe.vin.chat/.ui.MainActivity >/dev/null
+    echo "chat is open on the emulator"
 
 # Stop the emulator
 [group('run')]
 emulator-stop:
-    {{adb}} emu kill
+    #!/bin/sh
+    for s in $({{adb}} devices | awk 'NR > 1 && /^emulator-/ { print $1 }'); do {{adb}} -s "$s" emu kill >/dev/null; done
 
 # Desktop chat from ../chat, with the relays always on, to talk to the app on the emulator
 [group('run')]

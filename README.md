@@ -44,7 +44,8 @@ just setup           # the Android SDK, NDK and emulator, into ~/.local/share/an
 just build           # a debug APK in app/build/outputs/apk/debug/
 just build release   # a release APK, shrunk, signed with the local test key
 just run             # build, install on the connected phone (or the emulator, opened in a window) and start it
-just emulator        # the Android 17 emulator in a window, typing with your own keyboard (headless: without one)
+just emulator        # a foldable emulator (Pixel 9 Pro Fold, Android 17) in a window, with chat installed and open
+just emulator fresh  # the same, wiped first: nothing kept from before, in its storage or its saved memory
 just emulator-stop   # stop it
 just peer            # desktop chat from ../chat, with the relays always on, to talk to the app on the emulator
 ```
