@@ -68,8 +68,10 @@ emulator *mode: (build "debug")
             -k "system-images;android-37.0;default;x86_64" -d pixel_9_pro_fold
         # The laptop's keyboard types into the app, and the window draws with its GPU.
         sed -i -e 's/^hw.keyboard=.*/hw.keyboard=yes/' -e 's/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/' "$avd/config.ini"
+        # Drawn on the laptop's GPU: left to choose, the emulator distrusts the driver and draws in
+        # software. And more of the laptop than its defaults (4 cores, 2 GB): 6 is the most it takes.
+        set -- -gpu host -cores 6 -memory 4096
         # Fresh: its storage wiped, and the memory it saved when it last closed skipped.
-        set -- -gpu auto
         if [ -n "$fresh" ]; then set -- "$@" -wipe-data -no-snapshot-load; fi
         log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-gui/emulator.log"
         mkdir -p "$(dirname "$log")"
