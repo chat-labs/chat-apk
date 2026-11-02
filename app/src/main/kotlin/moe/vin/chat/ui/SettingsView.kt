@@ -1,5 +1,8 @@
 package moe.vin.chat.ui
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,13 +16,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,10 +37,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.vin.chat.BuildConfig
 import moe.vin.chat.Hub
 import moe.vin.chat.engine.parseColour
@@ -50,167 +58,859 @@ fun SettingsScreen(nav: Nav) {
     val scope = rememberCoroutineScope()
     val s = Hub.settings
     fun set(n: Settings) = Hub.updateSettings(n)
+
+    var search by remember { mutableStateOf("") }
     var nick by remember { mutableStateOf(s.nick) }
+    var relays by remember { mutableStateOf(s.relays) }
     var bridges by remember { mutableStateOf(s.customBridges) }
+    var keyKind by remember { mutableStateOf(Hub.identity?.kind ?: "age") }
     var keyText by remember { mutableStateOf("") }
     var importing by remember { mutableStateOf(false) }
+    var deriving by remember { mutableStateOf(false) }
+    var exportedSecret by remember { mutableStateOf<String?>(null) }
+    var identityBusy by remember { mutableStateOf(false) }
     var identityError by remember { mutableStateOf<String?>(null) }
     var dropping by remember { mutableStateOf(false) }
+    var forgettingAllVerified by remember { mutableStateOf(false) }
     var erasing by remember { mutableStateOf(false) }
     var protecting by remember { mutableStateOf(false) }
+    var shadowDialog by remember { mutableStateOf(false) }
+    var hasShadow by remember { mutableStateOf(Hub.hasShadowPassphrase) }
     var versions by remember { mutableStateOf<String?>(null) }
+
+    val importKeyFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val content = withContext(Dispatchers.IO) {
+                    runCatching { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                }
+                if (!content.isNullOrBlank()) {
+                    keyText = content.trim()
+                    importing = true
+                } else {
+                    Toast.makeText(ctx, "Couldn't read key file", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val saveSecretFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val secret = exportedSecret
+        if (uri != null && secret != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.openOutputStream(uri)?.use { it.write(secret.toByteArray()) } != null
+                    }.getOrDefault(false)
+                }
+                Toast.makeText(ctx, if (ok) "Saved secret key" else "Couldn't save file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun flushPendingFields() {
+        var next = Hub.settings
+        if (nick.trim() != next.nick) next = next.copy(nick = nick.trim())
+        if (relays.trim() != next.relays) next = next.copy(relays = relays.trim())
+        if (bridges != next.customBridges) next = next.copy(customBridges = bridges)
+        if (next != Hub.settings) set(next)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { flushPendingFields() }
+    }
+
     fun leave() {
-        if (nick.trim() != s.nick) set(Hub.settings.copy(nick = nick.trim()))
-        if (bridges != s.customBridges) set(Hub.settings.copy(customBridges = bridges))
+        flushPendingFields()
         nav.back()
     }
-    Page("Settings", onBack = ::leave) {
+
+    val sidebar = LocalSidebar.current
+    val showBack = !(sidebar?.listVisible == true && nav.stack.size <= 2)
+    val q = search.trim()
+    fun match(vararg terms: String): Boolean = q.isEmpty() || terms.any { it.contains(q, ignoreCase = true) }
+
+    Page("Settings", onBack = if (showBack) ::leave else null) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding()) {
-            Spacer(Modifier.height(18.dp))
-            Field("Nick", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(nick, { nick = it }, Modifier.fillMaxWidth(), placeholder = "blank: a random one in each room",
-                    onDone = { set(Hub.settings.copy(nick = nick.trim())) })
-            }
             Spacer(Modifier.height(14.dp))
-            Text("COLOUR", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Swatch(null, s.colour.isBlank()) { set(Hub.settings.copy(colour = "")) }
-                for (c in COLOURS) Swatch(c, s.colour == c) { set(Hub.settings.copy(colour = c)) }
-            }
-            Section("New rooms reach peers")
-            Choice(listOf("udp" to "Direct", "tor" to "Tor"), s.route, { set(Hub.settings.copy(route = it)) }, Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(10.dp))
-            Text("NOSTR RELAYS", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(8.dp))
-            Choice(listOf("off" to "Off", "fallback" to "When needed", "always" to "Always"), s.nostr, { set(Hub.settings.copy(nostr = it)) }, Modifier.padding(horizontal = 20.dp))
-            Text(
-                "Public relays carry the encrypted, padded traffic a route can't, and are where direct and Tor members meet. With Tor, they're reached through it.",
-                style = Type.small, color = p.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-            Toggle("BitTorrent DHT", "How direct rooms find their peers", s.dht) { set(Hub.settings.copy(dht = it)) }
-            Toggle("Local network", "Find peers on the same Wi-Fi", s.lan) { set(Hub.settings.copy(lan = it)) }
-            Toggle("Router port mapping", "Ask the router to let peers connect in", s.portmap) { set(Hub.settings.copy(portmap = it)) }
+            SearchBar(search, { search = it }, modifier = Modifier.padding(horizontal = 20.dp))
 
-            Section("Tor")
-            Text("BRIDGES", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(8.dp))
-            Choice(listOf("none" to "None", "obfs4" to "obfs4", "snowflake" to "Snowflake", "custom" to "Own"), s.bridges,
-                { set(Hub.settings.copy(bridges = it)); Hub.restartTor() }, Modifier.padding(horizontal = 20.dp))
-            Text(
-                when (s.bridges) {
-                    "obfs4", "snowflake" -> "Tor Browser's own bridges, for where Tor is blocked."
-                    "custom" -> "Bridge lines, one a line, as bridges.torproject.org gives them."
-                    else -> "Straight to the Tor network."
-                },
-                style = Type.small, color = p.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-            if (s.bridges == "custom") Field("Bridge lines", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(bridges, { bridges = it }, Modifier.fillMaxWidth(), multiLine = true, mono = true, placeholder = "obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0")
-            }
-            Toggle("Keep Tor's state", "Its guards and directory, so it connects faster. Leaves them on the phone.", s.torKeepState) {
-                set(Hub.settings.copy(torKeepState = it))
-            }
-            RowItem("Restart tor", "With the settings above", onClick = {
-                if (bridges != s.customBridges) set(Hub.settings.copy(customBridges = bridges))
-                Hub.restartTor()
-            }, leading = Icons.Onion)
-
-            Section("Notifications")
-            Choice(listOf("none" to "None", "mentions" to "For me", "all" to "All"), s.notify, { set(Hub.settings.copy(notify = it)) }, Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(10.dp))
-            Text("WHAT THEY SHOW", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(8.dp))
-            Choice(listOf("off" to "Nothing", "nick" to "Who", "message" to "Who and what"), s.preview, { set(Hub.settings.copy(preview = it)) }, Modifier.padding(horizontal = 20.dp))
-            Text("Never the room. Android keeps what a notification showed, and the lock screen only ever says a message came.",
-                style = Type.small, color = p.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-
-            Section("Privacy")
-            Toggle("Require peer verification", "Send nothing to a peer until you've compared verify codes with them", s.verify == "required") {
-                set(Hub.settings.copy(verify = if (it) "required" else "optional"))
-            }
-            Toggle("Noise in pictures", "A JPEG you send also gets noise nobody can see, on top of what's always taken out", s.noise) { set(Hub.settings.copy(noise = it)) }
-            Toggle("Stay connected with the screen off", "Uses more battery; without it, peers may time you out", s.stayAwake) { set(Hub.settings.copy(stayAwake = it)) }
-            Toggle("Open kept rooms at start", "Every kept room, once chat's open", s.reopenKept) { set(Hub.settings.copy(reopenKept = it)) }
-
-            Section("Files")
-            Choice(listOf("8" to "8 MB", "64" to "64 MB", "256" to "256 MB", "1024" to "1 GB"), s.fileLimitMb.toString(),
-                { set(Hub.settings.copy(fileLimitMb = it.toInt())) }, Modifier.padding(horizontal = 20.dp))
-            Text("The largest file fetched without asking again", style = Type.small, color = p.muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            Toggle("Fast transfers", "Seconds instead of minutes, but a transfer shows on the network", s.fastFiles) { set(Hub.settings.copy(fastFiles = it)) }
-
-            Section("Signing key")
-            val id = Hub.identity
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                if (id == null) Text("Rooms are joined without one. A signing key lets peers recognise you across rooms once they've compared codes with you once.",
-                    style = Type.small, color = p.muted)
-                else {
-                    Text("${id.kind} · ${id.fingerprint}", style = Type.label, color = p.text)
-                    if (id.public.isNotBlank() && id.kind == "age") Text(id.public, style = Type.label, color = p.muted)
-                    Text("New rooms sign with it.", style = Type.small, color = p.faint)
+            if (match("nick", "name", "colour", "color", "profile")) {
+                Spacer(Modifier.height(18.dp))
+                Field("Nick", Modifier.padding(horizontal = 20.dp)) {
+                    PrivateField(
+                        nick,
+                        { nick = it },
+                        Modifier.fillMaxWidth(),
+                        placeholder = "blank: a random one in each room",
+                        onDone = { set(Hub.settings.copy(nick = nick.trim())) },
+                    )
                 }
-                identityError?.let { Text(it, style = Type.small, color = p.bad) }
+                Spacer(Modifier.height(14.dp))
+                Text("COLOUR", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier.padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Swatch(null, s.colour.isBlank()) { set(Hub.settings.copy(colour = "")) }
+                    for (c in COLOURS) Swatch(c, s.colour == c) { set(Hub.settings.copy(colour = c)) }
+                }
+            }
+
+            if (match("route", "direct", "udp", "nostr", "relay", "dht", "ipv6", "lan", "local", "port", "upnp", "nat", "network", "log")) {
+                Section("New rooms reach peers")
+                Choice(
+                    listOf("udp" to "Direct", "tor" to "Tor"),
+                    s.route,
+                    { set(Hub.settings.copy(route = it)) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("NOSTR RELAYS", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Choice(
+                    listOf("off" to "Off", "fallback" to "When needed", "always" to "Always"),
+                    s.nostr,
+                    { set(Hub.settings.copy(nostr = it)) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+                Text(
+                    "Public relays carry the encrypted, padded traffic a route can't, and are where direct and Tor members meet. With Tor, they're reached through it.",
+                    style = Type.small,
+                    color = p.muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                if (s.nostr != "off") {
+                    Field("Custom relays (optional)", Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                        PrivateField(
+                            relays,
+                            { relays = it },
+                            Modifier.fillMaxWidth(),
+                            multiLine = true,
+                            mono = true,
+                            placeholder = "blank: default wss:// relays",
+                            onDone = { set(Hub.settings.copy(relays = relays.trim())) },
+                        )
+                    }
+                }
+                Toggle("BitTorrent DHT", "How direct rooms find their peers", s.dht) { set(Hub.settings.copy(dht = it)) }
+                if (s.dht) {
+                    Toggle("IPv6 DHT", "Also announce and look up peers over IPv6", s.ipv6) { set(Hub.settings.copy(ipv6 = it)) }
+                }
+                Toggle("Local network", "Find peers on the same Wi-Fi", s.lan) { set(Hub.settings.copy(lan = it)) }
+                Toggle("Router port mapping", "Ask the router to let peers connect in", s.portmap) { set(Hub.settings.copy(portmap = it)) }
+                Spacer(Modifier.height(6.dp))
+                Text("NETWORK NOTES", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Choice(
+                    listOf("normal" to "Normal", "verbose" to "Verbose", "off" to "Quiet"),
+                    s.netLog,
+                    { set(Hub.settings.copy(netLog = it)) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+            }
+
+            if (match("tor", "onion", "bridge", "obfs4", "snowflake", "meek", "guard")) {
+                Section("Tor")
+                Text("BRIDGES", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Choice(
+                    listOf(
+                        "none" to "None",
+                        "obfs4" to "obfs4",
+                        "snowflake" to "Snowflake",
+                        "meek" to "meek",
+                        "custom" to "Own",
+                    ),
+                    s.bridges,
+                    { set(Hub.settings.copy(bridges = it)); Hub.restartTor() },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+                Text(
+                    when (s.bridges) {
+                        "obfs4", "snowflake", "meek" -> "Tor Browser's built-in ${s.bridges} bridges, configured over Tor's control port."
+                        "custom" -> "Bridge lines (newline or ';' separated), sent over Tor's control port and never written to torrc."
+                        else -> "Straight to the Tor network."
+                    },
+                    style = Type.small,
+                    color = p.muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                if (s.bridges == "custom") {
+                    Field(
+                        "Bridge lines",
+                        Modifier.padding(horizontal = 20.dp),
+                        trailing = {
+                            Text(
+                                "Paste",
+                                style = Type.label,
+                                color = p.accent,
+                                modifier = Modifier.clickable {
+                                    readClipboard(ctx)?.let { bridges = it }
+                                },
+                            )
+                        },
+                    ) {
+                        PrivateField(
+                            bridges,
+                            { bridges = it },
+                            Modifier.fillMaxWidth(),
+                            multiLine = true,
+                            mono = true,
+                            placeholder = "obfs4 1.2.3.4:443 FINGERPRINT cert=… iat-mode=0",
+                        )
+                    }
+                }
+                Toggle(
+                    "Keep Tor's state",
+                    "Its guards and directory, sealed inside the vault so it connects faster next time.",
+                    s.torKeepState,
+                ) { set(Hub.settings.copy(torKeepState = it)) }
+                RowItem("Restart tor", "With the settings above", onClick = {
+                    if (bridges != s.customBridges) set(Hub.settings.copy(customBridges = bridges))
+                    Hub.restartTor()
+                }, leading = Icons.Onion)
+            }
+
+            if (match("notify", "notification", "preview", "mention", "alert")) {
+                Section("Notifications")
+                Choice(
+                    listOf("none" to "None", "mentions" to "For me", "all" to "All"),
+                    s.notify,
+                    { set(Hub.settings.copy(notify = it)) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button("Make a key", {
-                        identityError = null
-                        scope.launch { identityError = Hub.makeIdentity("age", null) }
-                    }, Modifier.weight(1f), primary = id == null, icon = Icons.Key)
-                    Button("Import", { importing = !importing }, Modifier.weight(1f), primary = false)
-                }
-                if (importing) {
-                    Spacer(Modifier.height(10.dp))
-                    Field("AGE identity or unencrypted PGP key") {
-                        PrivateField(keyText, { keyText = it }, Modifier.fillMaxWidth(), multiLine = true, mono = true, placeholder = "AGE-SECRET-KEY-1…")
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Button("Use this key", {
-                        val t = keyText.trim()
-                        val kind = if (t.startsWith("-----BEGIN PGP")) "pgp" else "age"
-                        scope.launch {
-                            identityError = Hub.makeIdentity(kind, t)
-                            if (identityError == null) { keyText = ""; importing = false }
-                        }
-                    }, Modifier.fillMaxWidth(), enabled = keyText.isNotBlank())
-                }
-                if (id != null) TextButton(onClick = { dropping = true }) { Text("Stop signing", style = Type.small, color = p.faint) }
+                Text("WHAT THEY SHOW", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Choice(
+                    listOf("off" to "Nothing", "nick" to "Who", "message" to "Who and what"),
+                    s.preview,
+                    { set(Hub.settings.copy(preview = it)) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+                Text(
+                    "Never the room. While locked or on the phone's lock screen, notifications never show who or what.",
+                    style = Type.small,
+                    color = p.muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
             }
 
-            Section("Vault")
-            RowItem("How it's sealed", when (Hub.vault.mode) {
-                Vault.Mode.BOTH -> "Passphrase and this phone"
-                Vault.Mode.DEVICE -> "This phone only"
-                Vault.Mode.PASSPHRASE -> "Passphrase only"
-                null -> ""
-            }, onClick = { protecting = true }, leading = Icons.Lock)
-            RowItem("Quit chat", "Every room goes offline or leaves, tor stops, and the vault is sealed again", onClick = { Hub.quit() }, leading = Icons.Close)
-            RowItem("Erase everything", "Every kept room, history, file and the signing key", onClick = { erasing = true }, leading = Icons.Trash)
+            if (match("chat", "follow", "scroll", "bottom", "privacy", "verify", "code", "noise", "picture", "jpeg", "awake", "battery", "reopen", "kept")) {
+                Section("Chat & privacy")
+                Toggle(
+                    "Follow new messages",
+                    "Stay at the bottom as messages arrive until you scroll up",
+                    s.followChat,
+                ) { set(Hub.settings.copy(followChat = it)) }
+                Toggle(
+                    "Require peer verification",
+                    "Send nothing to a peer until you've compared verify codes with them",
+                    s.verify == "required",
+                ) { set(Hub.settings.copy(verify = if (it) "required" else "optional")) }
+                Toggle(
+                    "Noise in pictures",
+                    "A JPEG you send also gets subtle sensor-like noise on top of stripped metadata",
+                    s.noise,
+                ) { set(Hub.settings.copy(noise = it)) }
+                Toggle(
+                    "Stay connected with the screen off",
+                    "Uses more battery; without it, peers may time you out",
+                    s.stayAwake,
+                ) { set(Hub.settings.copy(stayAwake = it)) }
+                Toggle(
+                    "Open kept rooms at start",
+                    "Every kept room, once chat's open",
+                    s.reopenKept,
+                ) { set(Hub.settings.copy(reopenKept = it)) }
+            }
 
-            Section("About")
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                Text("chat-gui ${BuildConfig.VERSION_NAME}", style = Type.label, color = p.muted)
-                val v = versions
-                if (v == null) Text("versions of chat and tor", style = Type.small, color = p.accent, modifier = Modifier.clickable {
-                    val lib = File(ctx.applicationInfo.nativeLibraryDir)
-                    thread {
-                        val out = listOf("libchat.so", "libtor.so").joinToString("\n") { exe ->
-                            runCatching {
-                                ProcessBuilder(File(lib, exe).path, "--version").redirectErrorStream(true).start().inputStream.bufferedReader().readLine()
-                            }.getOrNull() ?: "$exe: ?"
+            if (match("file", "size", "limit", "transfer", "fast")) {
+                Section("Files")
+                Choice(
+                    listOf("8" to "8 MB", "64" to "64 MB", "256" to "256 MB", "1024" to "1 GB"),
+                    s.fileLimitMb.toString(),
+                    { set(Hub.settings.copy(fileLimitMb = it.toInt())) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+                Text(
+                    "The largest file fetched without asking again",
+                    style = Type.small,
+                    color = p.muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                Toggle(
+                    "Fast transfers",
+                    "Seconds instead of minutes, but a transfer shows on the network",
+                    s.fastFiles,
+                ) { set(Hub.settings.copy(fastFiles = it)) }
+            }
+
+            if (match("signing", "identity", "key", "age", "pgp", "password", "export", "import", "fingerprint")) {
+                Section("Signing key")
+                val id = Hub.identity
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    if (id == null) {
+                        Text(
+                            "Rooms are joined without one. A signing key lets peers recognise you across rooms once they've compared codes with you once, and lets you :call verified peers.",
+                            style = Type.small,
+                            color = p.muted,
+                        )
+                    } else {
+                        Box(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.surface)
+                                .border(1.dp, p.line, RoundedCornerShape(10.dp)).padding(14.dp),
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${id.kind.uppercase()}${if (id.derived) " · from password" else ""}",
+                                        style = Type.label.copy(fontWeight = FontWeight.SemiBold),
+                                        color = p.accent,
+                                    )
+                                    Text(
+                                        "Copy fingerprint",
+                                        style = Type.label,
+                                        color = p.accent,
+                                        modifier = Modifier.clickable { copyText(ctx, id.fingerprint) },
+                                    )
+                                }
+                                Text(id.fingerprint, style = Type.label, color = p.text)
+                                if (id.public.isNotBlank()) {
+                                    Text(
+                                        id.public.lines().firstOrNull().orEmpty(),
+                                        style = Type.label,
+                                        color = p.muted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    if (id.public.isNotBlank()) {
+                                        Text(
+                                            "Copy public key",
+                                            style = Type.small.copy(fontWeight = FontWeight.Medium),
+                                            color = p.accent,
+                                            modifier = Modifier.clickable { copyText(ctx, id.public) },
+                                        )
+                                    }
+                                    Text(
+                                        "Export secret key",
+                                        style = Type.small.copy(fontWeight = FontWeight.Medium),
+                                        color = p.warn,
+                                        modifier = Modifier.clickable {
+                                            scope.launch {
+                                                val (sec, err) = Hub.exportIdentitySecret()
+                                                if (sec != null) exportedSecret = sec
+                                                else identityError = err
+                                            }
+                                        },
+                                    )
+                                }
+                            }
                         }
-                        versions = out
                     }
-                }) else Text(v, style = Type.label, color = p.muted)
-                Text("GPL-3.0. tor and lyrebird are Tor Project's own builds.", style = Type.small, color = p.faint)
+
+                    identityError?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, style = Type.small, color = p.bad)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Choice(listOf("age" to "AGE key", "pgp" to "PGP key"), keyKind, { keyKind = it })
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            if (identityBusy) "Working…" else "Random",
+                            onClick = {
+                                flushPendingFields()
+                                identityBusy = true
+                                identityError = null
+                                scope.launch {
+                                    identityError = Hub.makeIdentity(keyKind)
+                                    identityBusy = false
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !identityBusy,
+                            primary = id == null,
+                            icon = Icons.Key,
+                        )
+                        Button(
+                            "Password",
+                            onClick = { flushPendingFields(); deriving = true },
+                            modifier = Modifier.weight(1f),
+                            enabled = !identityBusy,
+                            primary = false,
+                        )
+                        Button(
+                            "Import",
+                            onClick = { importing = !importing },
+                            modifier = Modifier.weight(1f),
+                            enabled = !identityBusy,
+                            primary = false,
+                        )
+                    }
+
+                    if (importing) {
+                        Spacer(Modifier.height(10.dp))
+                        Field(
+                            "AGE secret key or unencrypted PGP key",
+                            trailing = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("File", style = Type.label, color = p.accent, modifier = Modifier.clickable {
+                                        importKeyFile.launch(arrayOf("*/*"))
+                                    })
+                                    Text("Paste", style = Type.label, color = p.accent, modifier = Modifier.clickable {
+                                        readClipboard(ctx)?.let { keyText = it }
+                                    })
+                                }
+                            },
+                        ) {
+                            PrivateField(
+                                keyText,
+                                { keyText = it },
+                                Modifier.fillMaxWidth(),
+                                multiLine = true,
+                                mono = true,
+                                placeholder = "AGE-SECRET-KEY-1… or -----BEGIN PGP PRIVATE KEY BLOCK-----",
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            "Use this key",
+                            onClick = {
+                                val t = keyText.trim()
+                                val k = if (t.startsWith("-----BEGIN PGP")) "pgp" else "age"
+                                identityBusy = true
+                                identityError = null
+                                scope.launch {
+                                    identityError = Hub.makeIdentity(k, key = t)
+                                    identityBusy = false
+                                    if (identityError == null) {
+                                        keyText = ""
+                                        importing = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = keyText.isNotBlank() && !identityBusy,
+                        )
+                    }
+
+                    if (id != null) {
+                        TextButton(onClick = { dropping = true }) {
+                            Text("Stop signing", style = Type.small, color = p.faint)
+                        }
+                    }
+                }
+            }
+
+            if (match("verified", "trust", "peer", "call", "contact", "key")) {
+                Section("Verified keys")
+                if (Hub.verifiedKeys.isEmpty()) {
+                    Text(
+                        "None yet. When you mark a peer's verify code as matching and they sign with a key, their key is remembered here across rooms.",
+                        style = Type.small,
+                        color = p.muted,
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                    )
+                } else {
+                    for (vk in Hub.verifiedKeys) {
+                        RowItem(
+                            "@${vk.nick}",
+                            "${vk.source} · ${vk.fingerprint.ifBlank { vk.pub.take(20) }}",
+                            leading = Icons.ShieldCheck,
+                            trailing = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    if (Hub.identity != null) {
+                                        Text(
+                                            "Call",
+                                            style = Type.small.copy(fontWeight = FontWeight.SemiBold),
+                                            color = p.accent,
+                                            modifier = Modifier.clickable {
+                                                Hub.call(vk, Hub.settings.route)?.let { r -> nav.home(Screen.Chat(r.id)) }
+                                            },
+                                        )
+                                    }
+                                    Text(
+                                        "Forget",
+                                        style = Type.small,
+                                        color = p.bad,
+                                        modifier = Modifier.clickable { Hub.forgetVerified(vk.pub) },
+                                    )
+                                }
+                            },
+                        )
+                    }
+                    RowItem(
+                        "Forget all verified keys",
+                        "Peers will need code comparison again",
+                        onClick = { forgettingAllVerified = true },
+                        leading = Icons.Trash,
+                        titleColor = p.bad,
+                    )
+                }
+            }
+
+            if (Hub.ignoredKeys.isNotEmpty() && match("ignored", "ignore", "mute", "block")) {
+                Section("Ignored keys")
+                for (ik in Hub.ignoredKeys) {
+                    RowItem(
+                        ik.nick.ifBlank { ik.fingerprint.take(16) },
+                        "${ik.source} · ${ik.fingerprint.ifBlank { ik.pub.take(20) }}",
+                        trailing = {
+                            Text(
+                                "Unignore",
+                                style = Type.small.copy(fontWeight = FontWeight.SemiBold),
+                                color = p.accent,
+                                modifier = Modifier.clickable { Hub.unignoreKey(ik.pub) },
+                            )
+                        },
+                    )
+                }
+            }
+
+            if (match("vault", "seal", "lock", "passphrase", "auto", "destruct", "tries", "shadow", "duress", "panic", "quit", "erase")) {
+                Section("Vault & security")
+                val vMode = Hub.vault.mode
+                RowItem(
+                    "How it's sealed",
+                    when (vMode) {
+                        Vault.Mode.BOTH -> "Passphrase and this phone"
+                        Vault.Mode.DEVICE -> "This phone only"
+                        Vault.Mode.PASSPHRASE -> "Passphrase only"
+                        null -> ""
+                    },
+                    onClick = { protecting = true },
+                    leading = Icons.Lock,
+                )
+                RowItem(
+                    "Lock screen now",
+                    "Hides chats and previews while keeping rooms connected",
+                    onClick = { flushPendingFields(); Hub.lockUi() },
+                    leading = Icons.Unlock,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("AUTO-LOCK INACTIVITY", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Spacer(Modifier.height(8.dp))
+                Choice(
+                    listOf("0" to "Off", "60" to "1m", "300" to "5m", "900" to "15m", "1800" to "30m"),
+                    s.autoLockSeconds.toString(),
+                    { set(Hub.settings.copy(autoLockSeconds = it.toInt())) },
+                    Modifier.padding(horizontal = 20.dp),
+                )
+
+                if (vMode?.needsPassphrase == true) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("SELF-DESTRUCT ON WRONG PASSPHRASE", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Choice(
+                        listOf("0" to "Off", "3" to "3 tries", "5" to "5 tries", "10" to "10 tries"),
+                        s.destroyTries.toString(),
+                        { set(Hub.settings.copy(destroyTries = it.toInt())) },
+                        Modifier.padding(horizontal = 20.dp),
+                    )
+                    Text(
+                        if (s.destroyTries > 0) "After ${s.destroyTries} wrong passphrases in a row, the vault and saved files erase themselves."
+                        else "No limit on wrong passphrase attempts.",
+                        style = Type.small,
+                        color = p.muted,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                    )
+                    RowItem(
+                        "Shadow passphrase",
+                        if (hasShadow) "Configured · entering it erases real data and opens an empty decoy vault"
+                        else "Optional duress passphrase that destroys real data and opens an empty vault",
+                        onClick = { shadowDialog = true },
+                        leading = Icons.Shield,
+                    )
+                }
+
+                Toggle(
+                    "Show panic button",
+                    "Adds a quick emergency shutoff button to the top of the rooms list",
+                    s.panicButton,
+                ) { set(Hub.settings.copy(panicButton = it)) }
+                if (s.panicButton) {
+                    Toggle(
+                        "Panic erases vault",
+                        "Also permanently deletes the vault, histories, keys and files on panic",
+                        s.panicWipe,
+                    ) { set(Hub.settings.copy(panicWipe = it)) }
+                }
+
+                RowItem(
+                    "Quit chat",
+                    "Every room goes offline or leaves, tor stops, and the vault is sealed again",
+                    onClick = { flushPendingFields(); Hub.quit() },
+                    leading = Icons.Close,
+                )
+                RowItem(
+                    "Erase everything",
+                    "Every kept room, history, file and the signing key",
+                    onClick = { erasing = true },
+                    leading = Icons.Trash,
+                    titleColor = p.bad,
+                )
+            }
+
+            if (match("about", "version", "gpl", "license", "tor", "chat")) {
+                Section("About")
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    Text("chat-apk ${BuildConfig.VERSION_NAME}", style = Type.label, color = p.muted)
+                    val v = versions
+                    if (v == null) {
+                        Text(
+                            "versions of chat and tor",
+                            style = Type.small,
+                            color = p.accent,
+                            modifier = Modifier.clickable {
+                                val lib = File(ctx.applicationInfo.nativeLibraryDir)
+                                scope.launch {
+                                    versions = withContext(Dispatchers.IO) {
+                                        listOf("libchat.so", "libtor.so").joinToString("\n") { exe ->
+                                            runCatching {
+                                                ProcessBuilder(File(lib, exe).path, "--version")
+                                                    .redirectErrorStream(true).start()
+                                                    .inputStream.bufferedReader().readLine()
+                                            }.getOrNull() ?: "$exe: ?"
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        Text(v, style = Type.label, color = p.muted)
+                    }
+                    Text("GPL-3.0. tor and lyrebird are Tor Project's own builds.", style = Type.small, color = p.faint)
+                }
             }
             Spacer(Modifier.height(24.dp))
         }
     }
-    if (dropping) Confirm("Stop signing?", "New rooms are joined without a key. The key is deleted from the vault; make sure you have a copy if you want it back.", "Stop signing", danger = true,
-        onConfirm = { dropping = false; Hub.dropIdentity() }, onDismiss = { dropping = false })
-    if (erasing) Confirm("Erase everything?", "Every kept room, history, file and the signing key go for good, and chat starts again from the beginning.", "Erase", danger = true,
-        onConfirm = { erasing = false; Hub.eraseEverything() }, onDismiss = { erasing = false })
-    if (protecting) ProtectionDialog { protecting = false }
+
+    if (dropping) Confirm(
+        "Stop signing?",
+        "Open and new rooms stop signing. The key is deleted from the vault; export a copy first if you want it back.",
+        "Stop signing",
+        danger = true,
+        onConfirm = { dropping = false; Hub.dropIdentity() },
+        onDismiss = { dropping = false },
+    )
+
+    if (forgettingAllVerified) Confirm(
+        "Forget all verified keys?",
+        "Every remembered peer key is forgotten, and you'll need to compare verify codes with them again.",
+        "Forget all",
+        danger = true,
+        onConfirm = { forgettingAllVerified = false; Hub.forgetAllVerified() },
+        onDismiss = { forgettingAllVerified = false },
+    )
+
+    if (erasing) Confirm(
+        "Erase everything?",
+        "Every kept room, history, file and the signing key go for good, and chat starts again from the beginning.",
+        "Erase",
+        danger = true,
+        onConfirm = { erasing = false; Hub.eraseEverything() },
+        onDismiss = { erasing = false },
+    )
+
+    if (protecting) ProtectionDialog {
+        protecting = false
+        hasShadow = Hub.hasShadowPassphrase
+    }
+
+    if (deriving) DeriveKeyDialog(
+        kind = keyKind,
+        currentNick = nick.trim(),
+        onDone = { deriving = false },
+        onDerived = { err ->
+            deriving = false
+            identityError = err
+        },
+    )
+
+    exportedSecret?.let { sec ->
+        ExportKeyDialog(
+            secret = sec,
+            kind = Hub.identity?.kind ?: "age",
+            onSaveFile = {
+                val ext = if (Hub.identity?.kind == "pgp") "asc" else "key"
+                saveSecretFile.launch("chat-signing-key.$ext")
+            },
+            onDismiss = { exportedSecret = null },
+        )
+    }
+
+    if (shadowDialog) ShadowDialog(
+        hasExisting = hasShadow,
+        onDone = {
+            shadowDialog = false
+            hasShadow = Hub.hasShadowPassphrase
+        },
+    )
+}
+
+@Composable
+private fun DeriveKeyDialog(
+    kind: String,
+    currentNick: String,
+    onDone: () -> Unit,
+    onDerived: (String?) -> Unit,
+) {
+    val p = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var pass by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var withNick by remember { mutableStateOf(currentNick.isNotBlank()) }
+    var busy by remember { mutableStateOf(false) }
+    val ok = pass.length >= 8 && pass == again && (!withNick || currentNick.isNotBlank())
+
+    AlertDialog(
+        onDismissRequest = onDone,
+        containerColor = p.surface,
+        title = { Text("Derive ${kind.uppercase()} key from password", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Deterministically derives your ${kind.uppercase()} key using Argon2id from this password and this phone's ID, so the same inputs always produce the same key.",
+                    style = Type.small,
+                    color = p.muted,
+                )
+                Field("Password (at least 8 characters)") {
+                    PrivateField(pass, { pass = it }, Modifier.fillMaxWidth(), password = true, focus = true)
+                }
+                Field("Again") {
+                    PrivateField(again, { again = it }, Modifier.fillMaxWidth(), password = true)
+                }
+                if (currentNick.isNotBlank()) {
+                    Toggle("Bind to nick ($currentNick)", "Different nicks derive different keys from the same password", withNick) { withNick = it }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = ok && !busy, onClick = {
+                busy = true
+                scope.launch {
+                    val err = Hub.makeIdentity(kind, password = pass, withNick = withNick)
+                    pass = ""
+                    again = ""
+                    onDerived(err)
+                }
+            }) {
+                Text(if (busy) "Deriving…" else "Derive key", color = p.accent, style = Type.small.copy(fontWeight = FontWeight.SemiBold))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDone) { Text("Cancel", color = p.muted, style = Type.small) }
+        },
+    )
+}
+
+@Composable
+private fun ExportKeyDialog(
+    secret: String,
+    kind: String,
+    onSaveFile: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalPalette.current
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = p.surface,
+        title = { Text("Secret ${kind.uppercase()} key", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Unencrypted secret key: anyone who gets this can sign as you in any room. Keep it somewhere sealed.",
+                    style = Type.small,
+                    color = p.warn,
+                )
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(p.bg)
+                        .border(1.dp, p.line, RoundedCornerShape(8.dp)).padding(10.dp),
+                ) {
+                    Text(secret, style = Type.label, color = p.text)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(onClick = { copySecret(ctx, "signing secret key", secret) }) {
+                    Text("Copy", color = p.accent, style = Type.small.copy(fontWeight = FontWeight.SemiBold))
+                }
+                TextButton(onClick = onSaveFile) {
+                    Text("Save as…", color = p.accent, style = Type.small.copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = p.muted, style = Type.small) }
+        },
+    )
+}
+
+@Composable
+private fun ShadowDialog(hasExisting: Boolean, onDone: () -> Unit) {
+    val p = LocalPalette.current
+    val scope = rememberCoroutineScope()
+    var pass by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val ok = pass.length >= 8 && pass == again
+
+    AlertDialog(
+        onDismissRequest = onDone,
+        containerColor = p.surface,
+        title = { Text("Shadow passphrase", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "If someone forces you to unlock chat, entering this passphrase permanently erases your real rooms, histories and keys, and opens an empty vault instead.",
+                    style = Type.small,
+                    color = p.muted,
+                )
+                Field("Shadow passphrase (at least 8 characters)") {
+                    PrivateField(pass, { pass = it }, Modifier.fillMaxWidth(), password = true, focus = true)
+                }
+                Field("Again") {
+                    PrivateField(again, { again = it }, Modifier.fillMaxWidth(), password = true)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (hasExisting) {
+                    TextButton(enabled = !busy, onClick = {
+                        busy = true
+                        scope.launch {
+                            Hub.setShadowPassphrase(null)
+                            onDone()
+                        }
+                    }) { Text("Remove", color = p.bad, style = Type.small) }
+                }
+                TextButton(enabled = ok && !busy, onClick = {
+                    busy = true
+                    scope.launch {
+                        Hub.setShadowPassphrase(pass.toCharArray())
+                        pass = ""
+                        again = ""
+                        onDone()
+                    }
+                }) {
+                    Text(if (busy) "Saving…" else "Save", color = p.accent, style = Type.small.copy(fontWeight = FontWeight.SemiBold))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDone) { Text("Cancel", color = p.muted, style = Type.small) }
+        },
+    )
 }
 
 @Composable
@@ -219,7 +919,8 @@ private fun Swatch(hex: String?, selected: Boolean, onClick: () -> Unit) {
     val c = hex?.let { parseColour(it) }?.let { Color(it) }
     Box(
         Modifier.size(28.dp).clip(CircleShape).background(c ?: p.raised)
-            .border(if (selected) 2.dp else 1.dp, if (selected) p.text else p.line, CircleShape).clickable(onClick = onClick),
+            .border(if (selected) 2.dp else 1.dp, if (selected) p.text else p.line, CircleShape)
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { if (c == null) Text("?", style = Type.label, color = p.muted) }
 }
@@ -251,6 +952,8 @@ private fun ProtectionDialog(onDone: () -> Unit) {
                 busy = true
                 scope.launch {
                     Hub.changeProtection(mode, if (mode.needsPassphrase) pass.toCharArray() else null)
+                    pass = ""
+                    again = ""
                     onDone()
                 }
             }) { Text(if (busy) "Sealing…" else "Seal it this way", color = p.accent, style = Type.small.copy(fontWeight = FontWeight.SemiBold)) }

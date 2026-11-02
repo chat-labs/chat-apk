@@ -8,7 +8,7 @@ export ANDROID_HOME := sdk
 default:
     @just --list --unsorted
 
-# Download the Android SDK, NDK and emulator chat-gui builds with into ANDROID_HOME (pinned versions)
+# Download the Android SDK, NDK and emulator chat-apk builds with into ANDROID_HOME (pinned versions)
 [group('build')]
 setup:
     #!/bin/sh
@@ -75,7 +75,7 @@ emulator *mode: (build "debug")
         set -- -gpu host -cores 6 -memory 4096
         # Fresh: its storage wiped, and the memory it saved when it last closed skipped.
         if [ -n "$fresh" ]; then set -- "$@" -wipe-data -no-snapshot-load; fi
-        log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-gui/emulator.log"
+        log="${XDG_STATE_HOME:-$HOME/.local/state}/chat-apk/emulator.log"
         mkdir -p "$(dirname "$log")"
         setsid nohup "$sdk/emulator/emulator" -avd chat37fold -no-audio -no-boot-anim -accel on "$@" >"$log" 2>&1 &
         {{adb}} wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'

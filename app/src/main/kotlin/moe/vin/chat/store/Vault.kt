@@ -32,55 +32,173 @@ class Vault(private val dir: File) {
         val usesDevice get() = this != PASSPHRASE
     }
 
-    class WrongPassphrase : Exception()
+    enum class UnlockOutcome { NORMAL, SHADOW }
+
+    class WrongPassphrase(val triesLeft: Int? = null) : Exception()
+    class VaultDestroyed : Exception()
 
     private val random = SecureRandom()
-    private var key: ByteArray? = null
+    private val lockObj = Any()
+    @Volatile private var key: ByteArray? = null
     private val header get() = File(dir, "header.json")
 
     val exists get() = header.isFile
     val unlocked get() = key != null
-    val mode: Mode? get() = if (!exists) null else Mode.entries.firstOrNull { it.key == JSONObject(header.readText()).optString("mode") }
+    val mode: Mode?
+        get() = if (!exists) null else runCatching {
+            val m = JSONObject(header.readText()).optString("mode")
+            Mode.entries.firstOrNull { it.key == m }
+        }.getOrNull()
 
-    fun create(mode: Mode, passphrase: CharArray?) {
+    val hasShadow: Boolean
+        get() = exists && runCatching { JSONObject(header.readText()).has("shadow") }.getOrDefault(false)
+
+    val destroyLimit: Int
+        get() = if (!exists) 0 else runCatching { JSONObject(header.readText()).optInt("destroyLimit", 0) }.getOrDefault(0)
+
+    fun create(mode: Mode, passphrase: CharArray?) = synchronized(lockObj) {
         dir.mkdirs()
         val k = ByteArray(32).also(random::nextBytes)
-        writeHeader(mode, k, passphrase)
+        writeHeader(mode, k, passphrase, shadow = null, destroyLimit = 0)
         key = k
     }
 
     // Seals the same key again another way, as the settings page changes it.
-    fun changeMode(mode: Mode, passphrase: CharArray?) {
+    fun changeMode(mode: Mode, passphrase: CharArray?) = synchronized(lockObj) {
         val k = key ?: error("locked")
-        writeHeader(mode, k, passphrase)
+        val limit = destroyLimit
+        writeHeader(mode, k, passphrase, shadow = null, destroyLimit = if (mode.needsPassphrase) limit else 0)
     }
 
-    fun unlock(passphrase: CharArray?) {
+    fun setDestroyLimit(limit: Int) = synchronized(lockObj) {
+        if (!exists) return@synchronized
         val h = JSONObject(header.readText())
-        val mode = Mode.entries.first { it.key == h.getString("mode") }
-        var sealed = b64(h.getString("sealed"))
-        if (mode.usesDevice) sealed = deviceOpen(sealed)
-        if (mode.needsPassphrase) {
-            val kek = argon2(passphrase ?: CharArray(0), b64(h.getString("salt")), h.getJSONObject("argon2"))
-            try {
-                sealed = open(kek, sealed, AAD_KEY)
+        h.put("destroyLimit", limit.coerceAtLeast(0))
+        h.put("failedTries", 0)
+        saveHeaderJson(h)
+    }
+
+    // Sets or clears a shadow passphrase: entering it on the unlock screen wipes the real vault
+    // and promotes an empty decoy vault in its place.
+    fun setShadow(passphrase: CharArray?) = synchronized(lockObj) {
+        if (!exists) return@synchronized
+        val h = JSONObject(header.readText())
+        val m = Mode.entries.first { it.key == h.getString("mode") }
+        if (passphrase == null || !m.needsPassphrase) {
+            h.remove("shadow")
+            saveHeaderJson(h)
+            return@synchronized
+        }
+        val decoyKey = ByteArray(32).also(random::nextBytes)
+        val salt = ByteArray(16).also(random::nextBytes)
+        val params = JSONObject().put("m", ARGON_MEMORY_KB).put("t", ARGON_PASSES).put("p", 1)
+        val kek = argon2(passphrase, salt, params)
+        var sealed = seal(kek, decoyKey, AAD_KEY)
+        kek.fill(0)
+        decoyKey.fill(0)
+        if (m.usesDevice) sealed = deviceSeal(sealed)
+        val sh = JSONObject().put("salt", b64(salt)).put("argon2", params).put("sealed", b64(sealed))
+        h.put("shadow", sh)
+        saveHeaderJson(h)
+    }
+
+    fun unlock(passphrase: CharArray?): UnlockOutcome = synchronized(lockObj) {
+        tryOpen(passphrase, keepExistingKey = false)
+    }
+
+    // Checks the passphrase (or device key) while the UI is locked with rooms still connected.
+    fun checkUiUnlock(passphrase: CharArray?): UnlockOutcome = synchronized(lockObj) {
+        tryOpen(passphrase, keepExistingKey = true)
+    }
+
+    private fun tryOpen(passphrase: CharArray?, keepExistingKey: Boolean): UnlockOutcome {
+        val h = JSONObject(header.readText())
+        val m = Mode.entries.first { it.key == h.getString("mode") }
+        var mainSealed = b64(h.getString("sealed"))
+        if (m.usesDevice) mainSealed = deviceOpen(mainSealed)
+        if (!m.needsPassphrase) {
+            if (!keepExistingKey) key = mainSealed else mainSealed.fill(0)
+            return UnlockOutcome.NORMAL
+        }
+        val pw = passphrase ?: CharArray(0)
+        val kek = argon2(pw, b64(h.getString("salt")), h.getJSONObject("argon2"))
+        val openedMain = try {
+            open(kek, mainSealed, AAD_KEY)
+        } catch (e: Exception) {
+            null
+        } finally {
+            kek.fill(0)
+        }
+        if (openedMain != null) {
+            if (h.optInt("failedTries", 0) != 0) {
+                h.put("failedTries", 0)
+                saveHeaderJson(h)
+            }
+            if (!keepExistingKey) {
+                key?.fill(0)
+                key = openedMain
+            } else {
+                openedMain.fill(0)
+            }
+            return UnlockOutcome.NORMAL
+        }
+
+        // Check shadow passphrase if one is set.
+        val shadow = h.optJSONObject("shadow")
+        if (shadow != null) {
+            val shadowKek = argon2(pw, b64(shadow.getString("salt")), shadow.getJSONObject("argon2"))
+            val openedShadow = try {
+                var shSealed = b64(shadow.getString("sealed"))
+                if (m.usesDevice) shSealed = deviceOpen(shSealed)
+                open(shadowKek, shSealed, AAD_KEY)
             } catch (e: Exception) {
-                throw WrongPassphrase()
+                null
             } finally {
-                kek.fill(0)
+                shadowKek.fill(0)
+            }
+            if (openedShadow != null) {
+                promoteShadow(h, shadow, openedShadow)
+                return UnlockOutcome.SHADOW
             }
         }
-        key = sealed
+
+        // Wrong passphrase: count against self-destruct if enabled.
+        val limit = h.optInt("destroyLimit", 0)
+        if (limit > 0) {
+            val tries = h.optInt("failedTries", 0) + 1
+            if (tries >= limit) {
+                erase()
+                throw VaultDestroyed()
+            }
+            h.put("failedTries", tries)
+            saveHeaderJson(h)
+            throw WrongPassphrase(triesLeft = limit - tries)
+        }
+        throw WrongPassphrase()
     }
 
-    fun lock() {
+    private fun promoteShadow(h: JSONObject, shadow: JSONObject, shadowKey: ByteArray) {
+        key?.fill(0)
+        dir.listFiles()?.forEach { if (it.name != "header.json") it.deleteRecursively() }
+        val next = JSONObject()
+            .put("v", 1)
+            .put("mode", h.getString("mode"))
+            .put("salt", shadow.getString("salt"))
+            .put("argon2", shadow.getJSONObject("argon2"))
+            .put("sealed", shadow.getString("sealed"))
+        saveHeaderJson(next)
+        key = shadowKey
+    }
+
+    fun lock() = synchronized(lockObj) {
         key?.fill(0)
         key = null
     }
 
     // Deletes everything, and the Keystore key with it.
-    fun erase() {
-        lock()
+    fun erase() = synchronized(lockObj) {
+        key?.fill(0)
+        key = null
         dir.deleteRecursively()
         try {
             KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
@@ -88,14 +206,15 @@ class Vault(private val dir: File) {
         }
     }
 
-    fun read(name: String): ByteArray? {
+    fun read(name: String): ByteArray? = synchronized(lockObj) {
         val f = File(dir, name)
         if (!f.isFile) return null
-        return open(key ?: error("locked"), f.readBytes(), name.toByteArray())
+        val k = key ?: return null
+        open(k, f.readBytes(), name.toByteArray())
     }
 
-    fun write(name: String, data: ByteArray) {
-        val k = key ?: error("locked")
+    fun write(name: String, data: ByteArray) = synchronized(lockObj) {
+        val k = key ?: return@synchronized
         val f = File(dir, name)
         f.parentFile?.mkdirs()
         val tmp = File(f.path + ".new")
@@ -107,8 +226,8 @@ class Vault(private val dir: File) {
     }
 
     // A file of records, each sealed on its own, so adding one doesn't rewrite the rest.
-    fun append(name: String, record: ByteArray) {
-        val k = key ?: error("locked")
+    fun append(name: String, record: ByteArray) = synchronized(lockObj) {
+        val k = key ?: return@synchronized
         val f = File(dir, name)
         f.parentFile?.mkdirs()
         val sealed = seal(k, record, name.toByteArray())
@@ -117,10 +236,10 @@ class Vault(private val dir: File) {
         }
     }
 
-    fun records(name: String): List<ByteArray> {
+    fun records(name: String): List<ByteArray> = synchronized(lockObj) {
         val f = File(dir, name)
         if (!f.isFile) return emptyList()
-        val k = key ?: error("locked")
+        val k = key ?: return emptyList()
         val out = ArrayList<ByteArray>()
         DataInputStream(f.inputStream().buffered()).use { input ->
             while (input.available() >= 4) {
@@ -131,12 +250,13 @@ class Vault(private val dir: File) {
                 try { out += open(k, sealed, name.toByteArray()) } catch (e: Exception) { break }
             }
         }
-        return out
+        out
     }
 
-    fun rewrite(name: String, records: List<ByteArray>) {
-        val k = key ?: error("locked")
+    fun rewrite(name: String, records: List<ByteArray>) = synchronized(lockObj) {
+        val k = key ?: return@synchronized
         val f = File(dir, name)
+        f.parentFile?.mkdirs()
         val tmp = File(f.path + ".new")
         FileOutputStream(tmp).use { out ->
             val d = DataOutputStream(out)
@@ -151,11 +271,11 @@ class Vault(private val dir: File) {
         tmp.renameTo(f)
     }
 
-    fun delete(name: String) {
+    fun delete(name: String) = synchronized(lockObj) {
         File(dir, name).delete()
     }
 
-    private fun writeHeader(mode: Mode, k: ByteArray, passphrase: CharArray?) {
+    private fun writeHeader(mode: Mode, k: ByteArray, passphrase: CharArray?, shadow: JSONObject?, destroyLimit: Int) {
         val h = JSONObject().put("v", 1).put("mode", mode.key)
         var sealed = k.copyOf()
         if (mode.needsPassphrase) {
@@ -165,9 +285,16 @@ class Vault(private val dir: File) {
             sealed = seal(kek, sealed, AAD_KEY)
             kek.fill(0)
             h.put("salt", b64(salt)).put("argon2", params)
+            if (destroyLimit > 0) h.put("destroyLimit", destroyLimit)
+            if (shadow != null) h.put("shadow", shadow)
         }
         if (mode.usesDevice) sealed = deviceSeal(sealed)
         h.put("sealed", b64(sealed))
+        saveHeaderJson(h)
+    }
+
+    private fun saveHeaderJson(h: JSONObject) {
+        dir.mkdirs()
         val tmp = File(dir, "header.json.new")
         tmp.writeText(h.toString())
         tmp.renameTo(header)

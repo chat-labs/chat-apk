@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ private fun codeTag(peer: Peer) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PeersScreen(nav: Nav, roomId: String) {
     val room = Hub.rooms[roomId]
@@ -56,7 +59,10 @@ fun PeersScreen(nav: Nav, roomId: String) {
         LazyColumn(Modifier.weight(1f)) {
             if (me != null) item {
                 Section("You")
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Dot(me.colour)
                     Column(Modifier.padding(start = 14.dp)) {
                         Text(me.nick, style = Type.body.copy(fontWeight = FontWeight.Medium), color = readable(me.colour, p))
@@ -67,23 +73,52 @@ fun PeersScreen(nav: Nav, roomId: String) {
                 Section("Here")
             }
             if (room.peers.isEmpty()) item {
-                Text("Nobody else is connected yet.", style = Type.small, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                Text(
+                    "Nobody else is connected yet.",
+                    style = Type.small,
+                    color = p.faint,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
             }
             items(room.peers, key = { it.id }) { peer ->
+                val hasDm = room.items.any { it.line.direct && it.line.peer == peer.id }
                 Row(
-                    Modifier.fillMaxWidth().clickable { nav.go(Screen.PeerInfo(roomId, peer.id)) }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth()
+                        .clickable { nav.go(Screen.PeerInfo(roomId, peer.id)) }
+                        .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Dot(peer.colour)
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                        Text(peer.name, style = Type.body.copy(fontWeight = FontWeight.Medium), color = readable(peer.colour, p), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        Text(
+                            peer.name,
+                            style = Type.body.copy(fontWeight = FontWeight.Medium),
+                            color = readable(peer.colour, p),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 4.dp),
+                        ) {
                             codeTag(peer)
-                            if (peer.identity != "none") Tag("${peer.identity} ${peer.signed ?: ""}".trim(), if (peer.signed == "failed") p.bad else p.muted)
+                            if (peer.identity != "none") {
+                                Tag("${peer.identity} ${peer.signed ?: ""}".trim(), if (peer.signed == "failed") p.bad else p.muted)
+                            }
                             if (peer.buildState == "modified") Tag("modified build", p.warn)
                             if (peer.history) Tag("keeps history", p.muted)
                             if (peer.ignored) Tag("ignored", p.faint)
                         }
+                    }
+                    if (peer.dm) {
+                        IconAction(
+                            Icons.Mail,
+                            "Message ${peer.nick} directly",
+                            { nav.go(Screen.Chat(roomId, peer.id)) },
+                            tint = if (hasDm) p.accent else p.muted,
+                            badge = hasDm,
+                        )
                     }
                 }
                 Hairline()
@@ -103,12 +138,18 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
     val room = Hub.rooms[roomId]
     val peer = room?.peer(peerId)
     val p = LocalPalette.current
+    val ctx = LocalContext.current
     if (room == null || peer == null) {
         Page("Peer", onBack = nav::back) {
             Text("They're not connected any more.", style = Type.body, color = p.muted, modifier = Modifier.padding(20.dp))
         }
         return
     }
+
+    val trusted = peer.fingerprint?.let { fp ->
+        Hub.verifiedKeys.firstOrNull { it.fingerprint == fp || (it.nick == peer.nick && it.source == peer.identity) }
+    }
+
     Page(peer.name, peer.id.take(8), onBack = nav::back) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Section("Verify code")
@@ -117,11 +158,24 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
                 if (words == null) {
                     Text("There's no code yet: the handshake is still going.", style = Type.small, color = p.muted)
                 } else {
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface).border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(16.dp)) {
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface)
+                            .border(1.dp, p.line, RoundedCornerShape(12.dp)).padding(16.dp),
+                    ) {
                         Column {
-                            for (group in words.split(" · ")) Text(group, style = Type.code.copy(fontSize = Type.code.fontSize * 1.2f), color = p.text)
+                            for (group in words.split(" · ")) {
+                                Text(group, style = Type.code.copy(fontSize = Type.code.fontSize * 1.2f), color = p.text)
+                            }
                             Spacer(Modifier.height(8.dp))
-                            Text(peer.code.hex.orEmpty(), style = Type.label, color = p.faint)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(peer.code.hex.orEmpty(), style = Type.label, color = p.faint)
+                                Text(
+                                    "Copy",
+                                    style = Type.label,
+                                    color = p.accent,
+                                    modifier = Modifier.clickable { copyText(ctx, "$words (${peer.code.hex.orEmpty()})") },
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -129,34 +183,85 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
                     Spacer(Modifier.height(10.dp))
                     Text(
                         "Read it out to ${peer.nick} over another channel, in person or on a call. If theirs is the same, nobody is sitting between you. Until then, someone else with this room's password could be.",
-                        style = Type.small, color = p.muted,
+                        style = Type.small,
+                        color = p.muted,
                     )
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button("They match", { room.verify(peer.id, true) }, Modifier.weight(1f), icon = Icons.ShieldCheck, enabled = peer.code.state != "compared")
-                        Button("They differ", { room.verify(peer.id, false) }, Modifier.weight(1f), primary = false, enabled = peer.code.state != "differs")
+                        Button(
+                            "They match",
+                            { room.verify(peer.id, true) },
+                            Modifier.weight(1f),
+                            icon = Icons.ShieldCheck,
+                            enabled = peer.code.state != "compared",
+                        )
+                        Button(
+                            "They differ",
+                            { room.verify(peer.id, false) },
+                            Modifier.weight(1f),
+                            primary = false,
+                            enabled = peer.code.state != "differs",
+                        )
                     }
                 }
             }
             Section("Signing identity")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                if (peer.identity == "none") Text("They don't sign with one.", style = Type.small, color = p.muted)
-                else {
-                    Text("${peer.identity} · ${peer.signed ?: "unverified"}", style = Type.small, color = if (peer.signed == "failed") p.bad else p.text)
-                    peer.fingerprint?.let { Text(it, style = Type.label, color = p.muted) }
-                    Text("Once the code matches, their key counts as verified: in another room, the same key needs no comparing.", style = Type.small, color = p.faint)
+                if (peer.identity == "none") {
+                    Text("They don't sign with one.", style = Type.small, color = p.muted)
+                } else {
+                    Text(
+                        "${peer.identity} · ${peer.signed ?: "unverified"}",
+                        style = Type.small,
+                        color = if (peer.signed == "failed") p.bad else p.text,
+                    )
+                    peer.fingerprint?.let { fp ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(fp, style = Type.label, color = p.muted, modifier = Modifier.weight(1f))
+                            Text("Copy", style = Type.label, color = p.accent, modifier = Modifier.clickable { copyText(ctx, fp) })
+                        }
+                    }
+                    Text(
+                        "Once the code matches, their key counts as verified: in another room, the same key needs no comparing.",
+                        style = Type.small,
+                        color = p.faint,
+                    )
                 }
             }
             Section("Build")
-            Text(peer.buildLabel.ifBlank { peer.buildState }, style = Type.small, color = if (peer.buildState == "modified") p.warn else p.text,
-                modifier = Modifier.padding(horizontal = 20.dp))
+            Text(
+                peer.buildLabel.ifBlank { peer.buildState },
+                style = Type.small,
+                color = if (peer.buildState == "modified") p.warn else p.text,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
             Spacer(Modifier.height(10.dp))
             Hairline()
-            if (peer.dm) RowItem("Message directly", "Only ${peer.nick} gets it, never passed on", onClick = { nav.go(Screen.Chat(roomId, peer.id)) }, leading = Icons.Mail)
+            if (peer.dm) {
+                RowItem(
+                    "Message directly",
+                    "Only ${peer.nick} gets it, never passed on",
+                    onClick = { nav.go(Screen.Chat(roomId, peer.id)) },
+                    leading = Icons.Mail,
+                )
+            }
+            if (trusted != null && Hub.identity != null && !room.isCall) {
+                RowItem(
+                    "Call @${trusted.nick}",
+                    "Open your shared daily contact room with them",
+                    onClick = {
+                        Hub.call(trusted, room.info?.route ?: Hub.settings.route)?.let { callRoom ->
+                            nav.home(Screen.Chat(callRoom.id))
+                        }
+                    },
+                    leading = Icons.Phone,
+                )
+            }
             RowItem(
                 if (peer.ignored) "Show what they say again" else "Ignore",
                 if (peer.ignored) null else "Hides what they say on this phone; it's still passed on to others",
-                onClick = { room.ignore(peer.id, !peer.ignored) }, leading = Icons.Close,
+                onClick = { room.ignore(peer.id, !peer.ignored) },
+                leading = Icons.Close,
             )
         }
     }

@@ -2,9 +2,12 @@ package moe.vin.chat.ui
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -12,8 +15,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import android.graphics.Rect
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +62,8 @@ sealed interface Screen {
     data class Chat(val room: String, val dm: String? = null) : Screen
     data class Peers(val room: String) : Screen
     data class PeerInfo(val room: String, val peer: String) : Screen
+    data class Files(val room: String) : Screen
+    data class PictureView(val room: String, val num: Int) : Screen
     data class Invite(val room: String) : Screen
     data class RoomSettings(val room: String) : Screen
     data object New : Screen
@@ -132,6 +138,16 @@ class MainActivity : ComponentActivity() {
         setContent { ChatTheme { Root(nav) } }
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        Hub.touchActivity()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        Hub.touchActivity()
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
@@ -140,10 +156,12 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Hub.foreground = true
+        Hub.touchActivity()
     }
 
     override fun onStop() {
         Hub.foreground = false
+        Hub.touchActivity()
         super.onStop()
     }
 
@@ -154,7 +172,7 @@ class MainActivity : ComponentActivity() {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
             @Suppress("DEPRECATION")
             val file = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                else intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            else intent.getParcelableExtra(Intent.EXTRA_STREAM)
             // An invite's password is words, so it runs to the end of its line; chat's check catches
             // anything after it on the same line.
             val invite = text?.let { Regex("chat:[^\\n]+").find(it)?.value?.trim() }
@@ -173,11 +191,16 @@ fun Root(nav: Nav) {
     Box(Modifier.fillMaxSize().background(p.bg)) {
         when (Hub.phase) {
             Hub.Phase.SETUP -> SetupScreen()
-            Hub.Phase.LOCKED -> UnlockScreen()
+            Hub.Phase.LOCKED -> UnlockScreen(uiLock = false)
             Hub.Phase.READY -> {
-                AskForNotifications()
-                BackHandler(enabled = nav.stack.size > 1) { nav.back() }
-                Panes(nav)
+                if (Hub.uiLocked) {
+                    BackHandler(enabled = true) {}
+                    UnlockScreen(uiLock = true)
+                } else {
+                    AskForNotifications()
+                    BackHandler(enabled = nav.stack.size > 1) { nav.back() }
+                    Panes(nav)
+                }
             }
         }
     }
@@ -194,7 +217,9 @@ private fun Panes(nav: Nav) {
     val p = LocalPalette.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         if (maxWidth < TWO_PANES) {
-            ScreenFor(nav, nav.top)
+            Crossfade(targetState = nav.top, animationSpec = tween(140), label = "screen") { target ->
+                ScreenFor(nav, target)
+            }
             return@BoxWithConstraints
         }
         val density = LocalDensity.current
@@ -224,8 +249,12 @@ private fun Panes(nav: Nav) {
                 ) {
                     Text("Pick a room, or make one", style = Type.small, color = p.faint, textAlign = TextAlign.Center)
                 } else CompositionLocalProvider(
-                    LocalSidebar provides SidebarButton(if (hidden) "Show rooms" else "Hide rooms") { Ui.roomsHidden = !hidden },
-                ) { ScreenFor(nav, nav.top) }
+                    LocalSidebar provides SidebarButton(if (hidden) "Show rooms" else "Hide rooms", listVisible = !hidden) { Ui.roomsHidden = !hidden },
+                ) {
+                    Crossfade(targetState = nav.top, animationSpec = tween(140), label = "detail") { target ->
+                        ScreenFor(nav, target)
+                    }
+                }
             }
         }
     }
@@ -238,6 +267,8 @@ private fun ScreenFor(nav: Nav, s: Screen) {
         is Screen.Chat -> ChatScreen(nav, s.room, s.dm)
         is Screen.Peers -> PeersScreen(nav, s.room)
         is Screen.PeerInfo -> PeerScreen(nav, s.room, s.peer)
+        is Screen.Files -> FilesScreen(nav, s.room)
+        is Screen.PictureView -> PictureScreen(nav, s.room, s.num)
         is Screen.Invite -> InviteScreen(nav, s.room)
         is Screen.RoomSettings -> RoomSettingsScreen(nav, s.room)
         Screen.New -> NewRoomScreen(nav)
@@ -259,11 +290,12 @@ fun Page(
     title: String,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
+    onTitleClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(LocalPalette.current.bg)) {
-        TopBar(title, subtitle, onBack, actions)
+        TopBar(title, subtitle, onBack, onTitleClick, actions)
         Column(Modifier.weight(1f).navigationBarsPadding()) { content() }
     }
 }

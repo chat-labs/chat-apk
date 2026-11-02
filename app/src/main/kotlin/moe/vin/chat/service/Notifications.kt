@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import moe.vin.chat.Hub
 import moe.vin.chat.R
 import moe.vin.chat.engine.Notify
 import moe.vin.chat.engine.Room
@@ -36,11 +37,16 @@ object Notifications {
     }
 
     // Never the room: as in chat, the notification shows who and what only as far as the preview
-    // setting lets chat pass them on, and on the lock screen not even that.
+    // setting lets chat pass them on, and never while the app itself is locked.
     fun message(ctx: Context, room: Room, n: Notify) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (!nm.areNotificationsEnabled()) return
-        val title = n.nick ?: if (n.mention) "A message for you" else "New message"
+        val locked = Hub.uiLocked
+        val title = if (locked) {
+            if (n.mention) "A message for you" else "New message"
+        } else {
+            n.nick ?: if (n.mention) "A message for you" else "New message"
+        }
         val public = Notification.Builder(ctx, MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("New message")
@@ -54,11 +60,17 @@ object Notifications {
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
             .setGroup(room.id)
-        n.text?.let { b.setContentText(it).setStyle(Notification.BigTextStyle().bigText(it)) }
+        if (!locked) {
+            n.text?.let { b.setContentText(it).setStyle(Notification.BigTextStyle().bigText(it)) }
+        }
         nm.notify(room.id.hashCode(), b.build())
     }
 
     fun clear(ctx: Context, roomId: String) {
         ctx.getSystemService(NotificationManager::class.java).cancel(roomId.hashCode())
+    }
+
+    fun clearAll(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java).cancelAll()
     }
 }

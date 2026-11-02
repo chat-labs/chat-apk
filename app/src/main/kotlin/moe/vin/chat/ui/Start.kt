@@ -1,5 +1,10 @@
 package moe.vin.chat.ui
 
+import android.app.Activity
+import android.app.KeyguardManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,10 +41,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.vin.chat.Hub
+import moe.vin.chat.engine.Status
 import moe.vin.chat.store.Settings
 import moe.vin.chat.store.Vault
 
@@ -148,22 +155,47 @@ fun SetupScreen() {
 }
 
 @Composable
-fun UnlockScreen() {
+fun UnlockScreen(uiLock: Boolean = false) {
     val p = LocalPalette.current
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val mode = remember { Hub.vault.mode }
+    val mode = remember(uiLock) { Hub.vault.mode }
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var erasing by remember { mutableStateOf(false) }
+
+    val deviceCredLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            scope.launch { runCatching { Hub.unlockUi(null) } }
+        }
+    }
+
     fun open() {
+        if (uiLock && mode?.needsPassphrase != true) {
+            val km = ctx.getSystemService(KeyguardManager::class.java)
+            @Suppress("DEPRECATION")
+            val intent = if (km?.isDeviceSecure == true) km.createConfirmDeviceCredentialIntent("chat", "Unlock chat") else null
+            if (intent != null) {
+                deviceCredLauncher.launch(intent)
+                return
+            }
+        }
         busy = true
         error = null
         scope.launch {
             try {
-                Hub.unlock(if (mode?.needsPassphrase == true) pass.toCharArray() else null)
+                val chars = if (mode?.needsPassphrase == true) pass.toCharArray() else null
+                if (uiLock) Hub.unlockUi(chars) else Hub.unlock(chars)
             } catch (e: Vault.WrongPassphrase) {
-                error = "That passphrase doesn't open it."
+                val left = e.triesLeft
+                error = if (left != null) {
+                    "That passphrase doesn't open it ($left ${if (left == 1) "try" else "tries"} left before erase)."
+                } else {
+                    "That passphrase doesn't open it."
+                }
+            } catch (e: Vault.VaultDestroyed) {
+                Toast.makeText(ctx, "Vault erased after too many wrong passphrases", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 error = "This phone's key can't open it: ${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}"
             }
@@ -171,27 +203,76 @@ fun UnlockScreen() {
             busy = false
         }
     }
-    LaunchedEffect(Unit) { if (mode?.needsPassphrase == false) open() }
+
+    LaunchedEffect(uiLock) {
+        if (!uiLock && mode?.needsPassphrase == false) open()
+    }
+
+    val openRooms = if (uiLock) Hub.rooms.values.count { it.status == Status.OPEN || it.status == Status.STARTING } else 0
+
     Column(
-        Modifier.fillMaxSize().systemBarsPadding().imePadding().wrapContentWidth().widthIn(max = 560.dp).padding(horizontal = 22.dp),
+        Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
+            .imePadding()
+            .wrapContentWidth()
+            .widthIn(max = 400.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Text("chat", style = Type.title.copy(fontSize = Type.title.fontSize * 1.4f), color = p.text)
         Spacer(Modifier.height(8.dp))
-        Text(if (mode?.needsPassphrase == true) "Sealed. Its passphrase opens it." else "Opening with this phone's key…", style = Type.body, color = p.muted)
+        Text(
+            when {
+                uiLock && openRooms > 0 ->
+                    "Locked. ${if (openRooms == 1) "1 room stays" else "$openRooms rooms stay"} connected in the background."
+                uiLock -> "Locked."
+                mode?.needsPassphrase == true -> "Sealed. Its passphrase opens it."
+                else -> "Opening with this phone's key…"
+            },
+            style = Type.body,
+            color = p.muted,
+        )
         if (mode?.needsPassphrase == true) {
             Spacer(Modifier.height(22.dp))
-            Field("Passphrase") { PrivateField(pass, { pass = it }, Modifier.fillMaxWidth(), password = true, onDone = { if (pass.isNotEmpty()) open() }, focus = true) }
+            Field("Passphrase") {
+                PrivateField(
+                    pass,
+                    { pass = it },
+                    Modifier.fillMaxWidth(),
+                    password = true,
+                    onDone = { if (pass.isNotEmpty()) open() },
+                    focus = true,
+                )
+            }
         }
         error?.let {
             Spacer(Modifier.height(10.dp))
             Text(it, style = Type.small, color = p.bad)
         }
         Spacer(Modifier.height(18.dp))
-        Button(if (busy) "Opening…" else "Open", enabled = !busy && (mode?.needsPassphrase != true || pass.isNotEmpty()), modifier = Modifier.fillMaxWidth(), onClick = ::open)
+        Button(
+            if (busy) "Opening…" else if (uiLock) "Unlock" else "Open",
+            enabled = !busy && (mode?.needsPassphrase != true || pass.isNotEmpty()),
+            modifier = Modifier.fillMaxWidth(),
+            onClick = ::open,
+        )
         Spacer(Modifier.height(10.dp))
-        TextButton(onClick = { erasing = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Erase everything", style = Type.small, color = p.faint)
+        Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (uiLock) {
+                TextButton(onClick = { Hub.quit() }) {
+                    Text("Quit & seal", style = Type.small, color = p.muted)
+                }
+                if (Hub.settings.panicButton) {
+                    TextButton(onClick = { Hub.panic() }) {
+                        Text("Panic", style = Type.small, color = p.bad)
+                    }
+                }
+            }
+            TextButton(onClick = { erasing = true }) {
+                Text("Erase everything", style = Type.small, color = p.faint)
+            }
         }
     }
     if (erasing) Confirm(

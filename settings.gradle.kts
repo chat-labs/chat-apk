@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "chat-gui"
+rootProject.name = "chat-apk"
 include(":app")

@@ -2,6 +2,7 @@ package moe.vin.chat.engine
 
 import android.graphics.Bitmap
 import android.util.Base64
+import moe.vin.chat.store.TrustedKey
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -10,7 +11,13 @@ sealed interface Event
 
 data class Hello(val version: String) : Event
 
-data class IdentityKey(val kind: String, val fingerprint: String, val public: String?, val secret: String?) : Event
+data class IdentityKey(
+    val kind: String,
+    val fingerprint: String,
+    val public: String?,
+    val secret: String?,
+    val created: Long = 0L,
+) : Event
 
 data class Me(val id: String, val nick: String, val colour: Int)
 
@@ -25,6 +32,8 @@ data class RoomInfo(
     val port: Int?,
     val history: Boolean,
     val movedFrom: String?,
+    val call: Boolean = false,
+    val day: Long? = null,
 ) : Event
 
 enum class LineKind { MESSAGE, NOTE, WARN }
@@ -70,12 +79,16 @@ data class Peer(
 
 data class Peers(val list: List<Peer>) : Event
 
+data class TrustList(val list: List<TrustedKey>) : Event
+data class IgnoredList(val list: List<TrustedKey>) : Event
+
 data class Relays(val used: Boolean, val up: Int, val total: Int)
 
 data class Net(
     val ready: Boolean,
     val online: Int,
     val pending: Int,
+    val rx: Long,
     val tor: String?,
     val onion: Boolean?,
     val dht: Boolean?,
@@ -139,6 +152,8 @@ private fun roomInfo(o: JSONObject, moved: Boolean) = RoomInfo(
     port = o.int("port"),
     history = o.bool("history"),
     movedFrom = if (moved) o.str("from") else null,
+    call = o.bool("call"),
+    day = o.long("day"),
 )
 
 private fun line(o: JSONObject) = Line(
@@ -182,10 +197,14 @@ private fun peer(o: JSONObject): Peer {
     )
 }
 
+private fun trustedKeys(a: JSONArray?): List<TrustedKey> =
+    if (a == null) emptyList() else List(a.length()) { TrustedKey.from(a.getJSONObject(it)) }
+
 private fun net(o: JSONObject) = Net(
     ready = o.bool("ready"),
     online = o.optInt("online"),
     pending = o.optInt("pending"),
+    rx = o.optLong("rx", 0L),
     tor = o.str("tor"),
     onion = if (o.has("onion")) o.bool("onion") else null,
     dht = if (o.has("dht")) o.bool("dht") else null,
@@ -245,7 +264,13 @@ fun parseEvent(text: String): Event? {
     val o = try { JSONObject(text) } catch (e: Exception) { return null }
     return when (o.optString("t")) {
         "hello" -> Hello(o.optString("version"))
-        "identity" -> IdentityKey(o.optString("kind"), o.optString("fingerprint"), o.str("public"), o.str("secret"))
+        "identity" -> IdentityKey(
+            o.optString("kind"),
+            o.optString("fingerprint"),
+            o.str("public"),
+            o.str("secret"),
+            o.optLong("created", 0L),
+        )
         "ready" -> roomInfo(o, moved = false)
         "moved" -> roomInfo(o, moved = true)
         "line" -> line(o)
@@ -253,6 +278,8 @@ fun parseEvent(text: String): Event? {
         "notify" -> Notify(o.str("nick"), o.str("text"), o.bool("mention"))
         "delivery" -> Delivery(o.getInt("own"), o.str("missed"), o.bool("settled"))
         "peers" -> o.getJSONArray("list").let { a -> Peers(List(a.length()) { peer(a.getJSONObject(it)) }) }
+        "trust" -> TrustList(trustedKeys(o.optJSONArray("list")))
+        "ignored" -> IgnoredList(trustedKeys(o.optJSONArray("list")))
         "net" -> net(o)
         "files" -> o.getJSONArray("list").let { a -> Files(List(a.length()) { file(a.getJSONObject(it)) }) }
         "picture" -> picture(o)
@@ -275,14 +302,25 @@ object Cmd {
     fun verify(peer: String, same: Boolean) = cmd("verify").put("peer", peer).put("same", same)
     fun ignore(peer: String, on: Boolean) = cmd("ignore").put("peer", peer).put("on", on)
     fun fetch(num: Int, show: Boolean, anyway: Boolean = false) = cmd("fetch").put("num", num).put("show", show).put("anyway", anyway)
-    fun offer(path: String) = cmd("offer").put("path", path)
+    fun offer(path: String, asis: Boolean = false) = cmd("offer").put("path", path).also { if (asis) it.put("asis", true) }
     fun cancel(num: Int) = cmd("cancel").put("num", num)
     fun timer(seconds: Int) = cmd("timer").put("seconds", seconds)
     fun history(on: Boolean) = cmd("history").put("on", on)
     fun move(answer: Boolean? = null) = cmd("move").also { if (answer != null) it.put("answer", answer) }
     fun newtor() = cmd("newtor")
-    fun identity(kind: String, key: String) = cmd("identity").put("kind", kind).put("key", key)
+    fun command(line: String) = cmd("command").put("line", line)
+    fun identity(kind: String, key: String, created: Long = 0L, export: Boolean = false) =
+        cmd("identity").put("kind", kind).put("key", key).also {
+            if (created > 0L) it.put("created", created)
+            if (export) it.put("export", true)
+        }
     fun newIdentity(kind: String) = cmd("identity").put("kind", kind).put("new", true)
+    fun deriveIdentity(kind: String, password: String, device: String, withNick: Boolean, nick: String) =
+        cmd("identity").put("kind", kind).put("password", password).put("device", device)
+            .put("with_nick", withNick).put("nick", nick)
+    fun dropIdentity() = cmd("identity").put("kind", "none")
+    fun trust(list: List<TrustedKey>) = cmd("trust").put("list", JSONArray().apply { list.forEach { put(it.toJson()) } })
+    fun ignored(list: List<TrustedKey>) = cmd("ignored").put("list", JSONArray().apply { list.forEach { put(it.toJson()) } })
     fun settings(o: JSONObject) = o.put("cmd", "settings")
     fun quit(kept: Boolean) = cmd("quit").put("kept", kept)
 }

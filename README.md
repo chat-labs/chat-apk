@@ -1,4 +1,4 @@
-# chat-gui
+# chat-apk
 
 An Android app for [chat](https://github.com/chat-labs/chat): encrypted chat without a server, with
 rooms that peers reach directly or through Tor.
@@ -11,15 +11,22 @@ Android image decoder ever reads what a peer sent.
 
 ## What's in it
 
-- Rooms: make one and share its invite as text or a QR code, or join with an invite or an id and
-  password. Direct (UDP, the BitTorrent DHT, your network, Nostr relays when needed) or Tor.
-- Messages with delivery ticks, replies, direct messages, and files and pictures.
-- Peers, with their verify codes to compare, signing identities and builds, and `:move`.
-- A signing key, made by chat or imported (AGE or unencrypted PGP).
+- Rooms: make one and share its invite as text or a QR code, join with an invite or an id and
+  password, or `:call` a verified peer in your shared daily room. Direct (UDP, the BitTorrent DHT
+  over IPv4/IPv6, your network, Nostr relays when needed) or Tor.
+- Messages with delivery ticks, grouped threads, replies, `@mention` completion, direct messages,
+  message timers, clickable links with IP-leak warnings, and files and pictures (with metadata
+  stripping, `Send as-is`, `Save as…` export, and zoomable viewer).
+- Peers, with their verify codes to compare, cross-room verified and ignored keys, signing
+  identities and builds, and `:move`.
+- A signing key, random, derived from a password, or imported (AGE or PGP), with secret key export.
 - Kept rooms and their histories, in a vault sealed the way you choose: a passphrase and a key in
-  the phone's secure hardware, the phone's key only, or a passphrase only.
+  the phone's secure hardware, the phone's key only, or a passphrase only — plus screen lock while
+  keeping rooms connected, inactivity auto-lock, wrong-passphrase self-destruct, shadow duress
+  passphrase, and panic shutoff.
 - Tor and lyrebird (obfs4, webtunnel, snowflake, meek) from Tor Project's Android bundle, one tor for
-  every Tor room, with Tor Browser's built-in bridges or your own.
+  every Tor room, with Tor Browser's built-in bridges or your own sent over Tor's control port and
+  Tor's state sealed in the vault.
 
 ## Privacy
 
