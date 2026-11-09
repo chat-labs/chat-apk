@@ -1,0 +1,18 @@
+# Weekly pull requests for the workflow's actions (pinned by commit) and the Gradle dependencies.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        update-types: [minor, patch]

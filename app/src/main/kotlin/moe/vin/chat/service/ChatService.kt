@@ -11,6 +11,7 @@ import android.net.wifi.WifiManager
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.compose.runtime.snapshotFlow
+import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -39,7 +40,9 @@ class ChatService : Service() {
                 return START_NOT_STICKY
             }
         }
-        startForeground(
+        // With its type from Android 10 on, as the platform takes it; before, without.
+        ServiceCompat.startForeground(
+            this,
             Notifications.RUNNING_ID,
             notification(Hub.rooms.size, Hub.tor.state, Hub.uiLocked),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,

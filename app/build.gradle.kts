@@ -65,18 +65,18 @@ dependencies {
     implementation(libs.bouncycastle)
 }
 
-// One chat build at a time: every variant's task shares the same CMake build folders.
+// One chat build at a time: every variant's task builds in the same Cargo target folder.
 abstract class NativeBuildLock : BuildService<BuildServiceParameters.None>
 
 val nativeLock = gradle.sharedServices.registerIfAbsent("chatNativeLock", NativeBuildLock::class) {
     maxParallelUsages.set(1)
 }
 
-// chat, built from its source with the NDK for each ABI, as lib/<abi>/libchat.so.
+// chat-json from chat-core, built with the NDK for each ABI (`just android` in chat-core), as
+// lib/<abi>/libchat.so: each room is one of it, a process driven over chat's JSON interface.
 abstract class ChatNative : DefaultTask() {
     @get:Internal abstract val sourceDir: DirectoryProperty
     @get:Internal abstract val ndkDir: DirectoryProperty
-    @get:Internal abstract val workDir: DirectoryProperty
     @get:Input abstract val abis: ListProperty<String>
     @get:Input abstract val api: Property<Int>
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
@@ -86,25 +86,33 @@ abstract class ChatNative : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     val sources: FileTree
         get() = sourceDir.asFileTree.matching {
-            include("src/**", "cmake/**", "CMakeLists.txt", "CHANGELOG.md", "keys/*.pub")
+            include("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo/**", "chat-core/Cargo.toml",
+                "chat-core/justfile", "chat-core/src/**")
         }
 
     @TaskAction
     fun build() {
         val src = sourceDir.get().asFile
-        val toolchain = ndkDir.get().file("build/cmake/android.toolchain.cmake").asFile
         val out = outputDir.get().asFile
         out.deleteRecursively()
         for (abi in abis.get()) {
-            val work = workDir.get().dir(abi).asFile
+            val target = rustTargets[abi] ?: error("no Rust target for the ABI $abi")
             exec.exec {
-                commandLine("cmake", "-S", src, "-B", work, "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
-                    "-DANDROID_ABI=$abi", "-DANDROID_PLATFORM=android-${api.get()}", "-DCMAKE_BUILD_TYPE=Release")
+                workingDir(File(src, "chat-core"))
+                environment("ANDROID_NDK_HOME", ndkDir.get().asFile.path)
+                commandLine("just", "android", target, api.get().toString())
             }
-            // Each of chat's dependencies builds with a compiler per CPU itself, so few at once here.
-            exec.exec { commandLine("cmake", "--build", work, "-j", minOf(8, Runtime.getRuntime().availableProcessors())) }
-            File(work, "chat").copyTo(File(out, "$abi/libchat.so"), overwrite = true)
+            File(src, "target/$target/release/chat-json").copyTo(File(out, "$abi/libchat.so"), overwrite = true)
         }
+    }
+
+    companion object {
+        val rustTargets = mapOf(
+            "arm64-v8a" to "aarch64-linux-android",
+            "x86_64" to "x86_64-linux-android",
+            "armeabi-v7a" to "armv7-linux-androideabi",
+            "x86" to "i686-linux-android",
+        )
     }
 }
 
@@ -167,7 +175,6 @@ androidComponents {
         val chat = tasks.register<ChatNative>("chatNative$cap") {
             sourceDir.set(File(rootDir, providers.gradleProperty("chat.source").get()))
             ndkDir.set(androidComponents.sdkComponents.ndkDirectory)
-            workDir.set(layout.buildDirectory.dir("chat-native"))
             abis.set(abiList)
             api.set(androidApi)
             usesService(nativeLock)

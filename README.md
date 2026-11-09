@@ -42,9 +42,11 @@ Android image decoder ever reads what a peer sent.
 
 ## Building
 
-You need a JDK (17 or later), CMake, and chat's source next to this folder (`../chat`, or set
-`chat.source` in `gradle.properties`). The build compiles chat with Android's NDK for each ABI in
-`chat.abis`, and fetches Tor Project's Android bundle, checked against its pinned SHA-256.
+You need a JDK (17 or later), rustup, [just](https://github.com/casey/just), and chat's source
+next to this folder (`../chat`, or set `chat.source` in `gradle.properties`). The build compiles
+chat-core's `chat-json` with Android's NDK for each ABI in `chat.abis` (chat-core's
+`just android`, with the Rust chat pins), and fetches Tor Project's Android bundle, checked against
+its pinned SHA-256.
 
 ```sh
 just setup           # the Android SDK, NDK and emulator, into ~/.local/share/android-sdk (or ANDROID_HOME)
@@ -56,6 +58,9 @@ just emulator fresh  # the same, wiped first: nothing kept from before, in its s
 just emulator-stop   # stop it
 just peer            # desktop chat from ../chat, with the relays always on, to talk to the app on the emulator
 ```
+
+On GitHub, [CI](.github/workflows/ci.yml) builds the APK with chat's main branch for each pull
+request and push, runs Android's lint on it, and keeps the debug APK as an artifact.
 
 The emulator sits behind a NAT of its own, where neither the LAN nor the DHT finds it, so desktop
 chat and the app meet on the Nostr relays (`just peer` turns them on), or through Tor. Copy an

@@ -111,10 +111,10 @@ emulator-stop:
 peer *args:
     #!/bin/sh
     set -eu
-    [ -x ../chat/build/chat ] || (cd ../chat && just build)
+    [ -x ../chat/target/release/chat ] || (cd ../chat && just tui::build release)
     # The emulator sits behind a NAT of its own, where neither the LAN nor the DHT finds it, so the
     # two meet on the relays.
-    exec ../chat/build/chat --nostr always "$@"
+    exec ../chat/target/release/chat --nostr always "$@"
 
 # Remove build output
 [group('build')]

@@ -1,6 +1,7 @@
 package moe.vin.chat.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Rect
 import android.net.Uri
@@ -143,6 +144,9 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    // Lint takes the override's super call for a use of androidx's restricted method; every key
+    // still goes through to it.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         Hub.touchActivity()
         return super.dispatchKeyEvent(event)
