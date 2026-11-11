@@ -6,7 +6,7 @@ import moe.vin.chat.store.TrustedKey
 import org.json.JSONArray
 import org.json.JSONObject
 
-// What `chat --json` says, as chat's docs/json.md has it.
+// What chat-json says, in chat's JSON interface (chat-core's json.rs).
 sealed interface Event
 
 data class Hello(val version: String) : Event

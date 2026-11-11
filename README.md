@@ -3,11 +3,12 @@
 An Android app for [chat](https://github.com/chat-labs/chat): encrypted chat without a server, with
 rooms that peers reach directly or through Tor.
 
-The app is the screens. chat itself does the rest: each open room is a `chat --json` process, and
-the app drives it over chat's [JSON interface](https://github.com/chat-labs/chat/blob/main/docs/json.md),
-so the protocol, the crypto and the network are chat's own, the same as on a desktop. A peer's
-picture is decoded by chat's own readers in their sandbox and comes to the app as pixels, so no
-Android image decoder ever reads what a peer sent.
+The app is the screens. [chat-core](https://github.com/chat-labs/chat/tree/main/chat-core) does
+the rest: each open room is a `chat-json` process, and the app drives it over chat's
+[JSON interface](https://github.com/chat-labs/chat/blob/main/chat-core/src/json.rs), so the
+protocol, the crypto and the network are chat-core's, the same as on a desktop. A peer's picture
+is decoded by chat-core, in Rust, and comes to the app as pixels, so no Android image decoder ever
+reads what a peer sent.
 
 ## What's in it
 

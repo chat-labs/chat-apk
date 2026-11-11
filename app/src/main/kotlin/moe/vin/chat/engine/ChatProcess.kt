@@ -7,7 +7,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import kotlin.concurrent.thread
 import org.json.JSONObject
 
-// One `chat --json`: one room. Events come back on the main thread.
+// One chat-json: one room. Events come back on the main thread.
 class ChatProcess(
     private val exe: File,
     private val home: File,
@@ -25,7 +25,7 @@ class ChatProcess(
         // chat's temporary folders have to be its user's alone.
         home.setReadable(false, false); home.setReadable(true, true)
         tmp.setReadable(false, false); tmp.setReadable(true, true)
-        val pb = ProcessBuilder(exe.path, "--json").directory(home)
+        val pb = ProcessBuilder(exe.path).directory(home)
         pb.environment().clear()
         pb.environment()["HOME"] = home.path
         pb.environment()["TMPDIR"] = tmp.path
