@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.vin.chat.engine.ChatProcess
 import moe.vin.chat.engine.Cmd
+import moe.vin.chat.engine.Event
 import moe.vin.chat.engine.Failure
 import moe.vin.chat.engine.IdentityKey
 import moe.vin.chat.engine.Line
@@ -30,6 +31,7 @@ import moe.vin.chat.engine.Room
 import moe.vin.chat.engine.RoomHost
 import moe.vin.chat.engine.RoomInfo
 import moe.vin.chat.engine.Status
+import moe.vin.chat.engine.Suggestion
 import moe.vin.chat.engine.Tor
 import moe.vin.chat.service.ChatService
 import moe.vin.chat.service.Notifications
@@ -332,7 +334,7 @@ object Hub : RoomHost {
         rooms.clear()
         tor.stop(immediate = true)
         File(app.cacheDir, "outbox").deleteRecursively()
-        File(app.cacheDir, "identity").deleteRecursively()
+        File(app.cacheDir, "ask").deleteRecursively()
         if (wipe) {
             eraseEverything()
         } else {
@@ -387,7 +389,7 @@ object Hub : RoomHost {
         File(app.noBackupFilesDir, "tor").deleteRecursively()
         File(app.cacheDir, "outbox").deleteRecursively()
         File(app.cacheDir, "tor").deleteRecursively()
-        File(app.cacheDir, "identity").deleteRecursively()
+        File(app.cacheDir, "ask").deleteRecursively()
     }
 
     // ---- the signing identity ----
@@ -396,24 +398,27 @@ object Hub : RoomHost {
         runCatching { AndroidSettings.Secure.getString(app.contentResolver, AndroidSettings.Secure.ANDROID_ID) }
             .getOrNull().orEmpty().ifBlank { "android-device" }
 
-    private suspend fun runIdentityCmd(cmd: JSONObject): EventResult {
-        val home = File(app.cacheDir, "identity-${UUID.randomUUID()}").apply { mkdirs() }
+    // One command to a chat-json of its own, outside any room: its answer, the first event `pick`
+    // takes, or what went wrong.
+    private suspend fun <T : Any> ask(cmd: JSONObject, pick: (Event) -> T?): Answer<T> {
+        val home = File(app.cacheDir, "ask/${UUID.randomUUID()}").apply { mkdirs() }
         return try {
             withContext(Dispatchers.IO) {
                 suspendCancellableCoroutine { cont ->
                     var done = false
                     lateinit var p: ChatProcess
                     p = ChatProcess(exe, home, onEvent = { e ->
-                        if (!done && (e is IdentityKey || e is Failure)) {
+                        val got = if (done) null else pick(e)
+                        if (!done && (got != null || e is Failure)) {
                             done = true
                             p.send(Cmd.quit(false))
                             p.close()
-                            cont.resume(if (e is IdentityKey) EventResult.Ok(e) else EventResult.Err((e as Failure).text))
+                            cont.resume(if (got != null) Answer.Ok(got) else Answer.Err((e as Failure).text))
                         }
                     }, onExit = { _, err ->
                         if (!done) {
                             done = true
-                            cont.resume(EventResult.Err(err.lastOrNull()?.removePrefix("chat: ") ?: "chat didn't start"))
+                            cont.resume(Answer.Err(err.lastOrNull()?.removePrefix("chat: ") ?: "chat didn't start"))
                         }
                     })
                     p.start(listOf(cmd))
@@ -424,9 +429,11 @@ object Hub : RoomHost {
         }
     }
 
-    private sealed interface EventResult {
-        data class Ok(val key: IdentityKey) : EventResult
-        data class Err(val message: String) : EventResult
+    private suspend fun runIdentityCmd(cmd: JSONObject) = ask(cmd) { it as? IdentityKey }
+
+    private sealed interface Answer<out T> {
+        data class Ok<T>(val value: T) : Answer<T>
+        data class Err(val message: String) : Answer<Nothing>
     }
 
     // Asks chat for a new key, a password-derived key, or to read an imported one.
@@ -443,8 +450,8 @@ object Hub : RoomHost {
             else -> Cmd.newIdentity(kind)
         }
         return when (val r = runIdentityCmd(cmd)) {
-            is EventResult.Ok -> {
-                val k = r.key
+            is Answer.Ok -> {
+                val k = r.value
                 val entry = IdentityEntry(
                     kind = k.kind,
                     secret = k.secret ?: key.orEmpty(),
@@ -461,7 +468,7 @@ object Hub : RoomHost {
                 rooms.values.forEach { it.process?.send(JSONObject(live)) }
                 null
             }
-            is EventResult.Err -> r.message
+            is Answer.Err -> r.message
         }
     }
 
@@ -471,8 +478,8 @@ object Hub : RoomHost {
             return id.secret to null
         }
         return when (val r = runIdentityCmd(Cmd.identity(id.kind, id.secret, id.created, export = true))) {
-            is EventResult.Ok -> (r.key.secret ?: id.secret) to null
-            is EventResult.Err -> null to r.message
+            is Answer.Ok -> (r.value.secret ?: id.secret) to null
+            is Answer.Err -> null to r.message
         }
     }
 
@@ -542,6 +549,10 @@ object Hub : RoomHost {
     private val invites = HashMap<String, String>()
 
     // A room to create, or join by its id and password or an invite. keep: it goes in the vault.
+    // A new room's id and password, as chat makes them up, for the new room form; null if chat
+    // didn't answer.
+    suspend fun suggestRoom(): Suggestion? = (ask(Cmd.suggest()) { it as? Suggestion } as? Answer.Ok)?.value
+
     fun start(
         room: String?,
         password: String?,
@@ -552,6 +563,7 @@ object Hub : RoomHost {
         keep: Boolean,
         port: Int = 0,
         peers: String = "",
+        create: Boolean = room == null && invite == null,
     ): Room {
         val entry = RoomEntry(
             room = room.orEmpty(),
@@ -559,7 +571,7 @@ object Hub : RoomHost {
             label = label,
             route = route,
             history = history,
-            created = room == null && invite == null,
+            created = create,
             port = port,
             peers = peers,
         )
@@ -703,7 +715,10 @@ object Hub : RoomHost {
         when {
             callPeer != null -> o.put("call", callPeer.pub).put("day", callDay)
             invite != null -> o.put("invite", invite)
-            entry.room.isNotEmpty() -> o.put("create", entry.created).put("room", entry.room).put("password", entry.password)
+            entry.room.isNotEmpty() -> o.put("create", entry.created).put("room", entry.room).apply {
+                // None for a new room: chat makes one up.
+                if (entry.password.isNotEmpty()) put("password", entry.password)
+            }
             else -> o.put("create", true).apply { if (entry.password.isNotEmpty()) put("password", entry.password) }
         }
         if (s.nick.isNotBlank()) o.put("nick", s.nick)
