@@ -63,6 +63,7 @@ fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
         is Screen.Peers -> t.room
         is Screen.PeerInfo -> t.room
         is Screen.Files -> t.room
+        is Screen.Console -> t.room
         is Screen.PictureView -> t.room
         is Screen.Invite -> t.room
         is Screen.RoomSettings -> t.room

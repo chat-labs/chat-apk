@@ -192,6 +192,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
                         badge = activeTransfer,
                     )
                 }
+                IconAction(Icons.Console, "Console", { nav.go(Screen.Console(roomId)) })
                 IconAction(Icons.People, "Peers", { nav.go(Screen.Peers(roomId)) })
                 Box {
                     IconAction(Icons.More, "More", { moreMenu = true })
@@ -305,7 +306,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
             onOpenLink = { url, sender -> pendingLink = url to sender },
         )
 
-        ComposerBar(room = room, dm = dm, dmPeer = dmPeer)
+        ComposerBar(room = room, dm = dm, dmPeer = dmPeer, onCommand = { nav.go(Screen.Console(roomId)) })
     }
 
     pendingLink?.let { (url, sender) ->
@@ -320,7 +321,8 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
 // Isolated from Messages so typing into drafts never triggers list recomposition.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?) {
+// onCommand: a :command was run, whose answer is in the console.
+private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, onCommand: () -> Unit) {
     val p = LocalPalette.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -482,7 +484,10 @@ private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?) {
                     val mid = replyTo?.line?.mid
                     when {
                         dm != null -> room.dm(dm, t)
-                        mid == null && t.length >= 2 && t[0] == ':' && t[1].isLetter() -> room.runCommand(t)
+                        mid == null && t.length >= 2 && t[0] == ':' && t[1].isLetter() -> {
+                            room.runCommand(t)
+                            onCommand()
+                        }
                         mid != null -> room.reply(mid, t)
                         else -> room.say(t)
                     }
