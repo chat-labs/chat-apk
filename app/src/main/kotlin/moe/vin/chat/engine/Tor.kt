@@ -109,34 +109,32 @@ class Tor(private val ctx: Context) {
         thread(name = "tor-out", isDaemon = true) {
             var last: String? = null
             var configured = false
-            p.inputStream.bufferedReader().useLines { lines ->
-                for (line in lines) {
-                    val m = boot.find(line)
-                    when {
-                        m != null -> {
-                            val pct = m.groupValues[1].toInt()
-                            val what = m.groupValues[2]
-                            main.post {
-                                if (process === p) state = state.copy(
-                                    phase = if (pct >= 100) Phase.READY else Phase.STARTING,
-                                    progress = pct,
-                                    message = what,
-                                )
-                            }
+            p.inputStream.eachLine { line ->
+                val m = boot.find(line)
+                when {
+                    m != null -> {
+                        val pct = m.groupValues[1].toInt()
+                        val what = m.groupValues[2]
+                        main.post {
+                            if (process === p) state = state.copy(
+                                phase = if (pct >= 100) Phase.READY else Phase.STARTING,
+                                progress = pct,
+                                message = what,
+                            )
                         }
-                        !configured && "Opened Control listener" in line -> {
-                            configured = true
-                            val err = if (bridges.isNotEmpty()) configureBridges(data, control, bridges) else null
-                            if (err != null) {
-                                last = err
-                                discardState = true
-                                p.destroy()
-                            } else {
-                                main.post { if (process === p) state = state.copy(listening = true) }
-                            }
-                        }
-                        "[err]" in line || "[warn]" in line -> last = line.substringAfter("] ").take(200)
                     }
+                    !configured && "Opened Control listener" in line -> {
+                        configured = true
+                        val err = if (bridges.isNotEmpty()) configureBridges(data, control, bridges) else null
+                        if (err != null) {
+                            last = err
+                            discardState = true
+                            p.destroy()
+                        } else {
+                            main.post { if (process === p) state = state.copy(listening = true) }
+                        }
+                    }
+                    "[err]" in line || "[warn]" in line -> last = line.substringAfter("] ").take(200)
                 }
             }
             val code = p.waitFor()
