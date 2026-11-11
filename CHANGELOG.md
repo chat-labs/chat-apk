@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1
+
+- Tor rooms open: chat-core took the challenge the app's tor sends when a room logs in to it as
+  malformed, so every Tor room failed.
+- The app stays open when tor or a room's chat-json is stopped under it: leaving the last Tor room,
+  every Tor room failing, locking, panic, the settings that restart rooms, or tor refusing its
+  bridges closed the whole app.
+- The ghost is the app's icon, and its themed icon's shape.
+
+Still signed with the local test key, so it installs over 0.1.0.
+
 ## 0.1.0
 
 The first release: chat on Android, each room run by chat-core's `chat-json` and driven over
