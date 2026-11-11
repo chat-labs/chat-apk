@@ -3,6 +3,8 @@ package moe.vin.chat.engine
 import android.os.Handler
 import android.os.Looper
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.LinkedBlockingQueue
 import kotlin.concurrent.thread
 import org.json.JSONObject
@@ -33,16 +35,14 @@ class ChatProcess(
         process = p
         commands.forEach { outbox.put(it.toString()) }
         thread(name = "chat-out", isDaemon = true) {
-            p.inputStream.bufferedReader().useLines { lines ->
-                for (line in lines) {
-                    val event = try { parseEvent(line) } catch (e: Exception) { null } ?: continue
-                    main.post { onEvent(event) }
-                }
+            p.inputStream.eachLine { line ->
+                val event = try { parseEvent(line) } catch (e: Exception) { null } ?: return@eachLine
+                main.post { onEvent(event) }
             }
         }
         thread(name = "chat-err", isDaemon = true) {
-            p.errorStream.bufferedReader().useLines { lines ->
-                for (line in lines) synchronized(stderr) {
+            p.errorStream.eachLine { line ->
+                synchronized(stderr) {
                     stderr.addLast(line)
                     if (stderr.size > 20) stderr.removeFirst()
                 }
@@ -83,5 +83,14 @@ class ChatProcess(
 
     private companion object {
         val CLOSE = String(charArrayOf('\u0000'))
+    }
+}
+
+// Each line a program writes, until it stops. destroy() closes the stream under its reader, which
+// then throws: that's its end too. Thrown on, it would end the app, whichever thread it's on.
+fun InputStream.eachLine(f: (String) -> Unit) {
+    try {
+        bufferedReader().forEachLine(f)
+    } catch (e: IOException) {
     }
 }
