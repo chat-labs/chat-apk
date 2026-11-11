@@ -117,8 +117,9 @@ abstract class ChatNative : DefaultTask() {
 }
 
 // tor and lyrebird from Tor Project's Android expert bundle, pinned by SHA-256 (the hashes are the
-// ones in Tor Browser 16.0's sha256sums-signed-build.txt, whose signature checked out), as
+// ones in Tor Browser 16.0.2's sha256sums-signed-build.txt, whose signature checked out), as
 // lib/<abi>/libtor.so and liblyrebird.so, and its pt_config.json (the built-in bridges) as an asset.
+// From Tor Project's archive, which keeps every version: its downloads keep only the newest.
 abstract class TorBundle : DefaultTask() {
     @get:Input abstract val version: Property<String>
     @get:Input abstract val bundles: MapProperty<String, String>
@@ -149,7 +150,7 @@ abstract class TorBundle : DefaultTask() {
             val tgz = File(cache, name)
             if (!tgz.isFile || sha256(tgz) != sha) {
                 val part = File(cache, "$name.part")
-                URI("https://dist.torproject.org/torbrowser/${version.get()}/$name").toURL().openStream().use { input ->
+                URI("https://archive.torproject.org/tor-package-archive/torbrowser/${version.get()}/$name").toURL().openStream().use { input ->
                     part.outputStream().use { input.copyTo(it) }
                 }
                 part.renameTo(tgz)
@@ -165,8 +166,8 @@ abstract class TorBundle : DefaultTask() {
 }
 
 val torBundles = mapOf(
-    "arm64-v8a" to "aarch64:bf8f4c63652fd7daa62288713c7fa512f244a5b972808f6251450e5fdfca9120",
-    "x86_64" to "x86_64:ab3152ba164bcd49e50175086c62e40ffa2bf9002a4f6473f77111bd88b0462b",
+    "arm64-v8a" to "aarch64:5fc4967b88bbf81546386bbdecbe86a70982ff7810cef8a155040f8aedd1905f",
+    "x86_64" to "x86_64:2a3e89f991dc753306984dfadcd79e4017eb162e2a376b7ff42653c4b0c61286",
 )
 
 androidComponents {
@@ -180,7 +181,7 @@ androidComponents {
             usesService(nativeLock)
         }
         val tor = tasks.register<TorBundle>("torBundle$cap") {
-            version.set("16.0")
+            version.set("16.0.2")
             bundles.set(torBundles.filterKeys { it in abiList })
             cacheDir.set(layout.buildDirectory.dir("tor-cache"))
         }
