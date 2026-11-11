@@ -10,7 +10,7 @@ import org.json.JSONObject
 data class Settings(
     val nick: String = "",
     val colour: String = "",
-    val route: String = "udp",
+    val route: String = "tor",
     val nostr: String = "fallback",
     val relays: String = "",
     val dht: Boolean = true,

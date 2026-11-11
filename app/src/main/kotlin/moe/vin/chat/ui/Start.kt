@@ -88,7 +88,7 @@ fun SetupScreen() {
     var pass by remember { mutableStateOf("") }
     var again by remember { mutableStateOf("") }
     var nick by remember { mutableStateOf("") }
-    var route by remember { mutableStateOf("udp") }
+    var route by remember { mutableStateOf("tor") }
     var busy by remember { mutableStateOf(false) }
     val problem = when {
         !mode.needsPassphrase -> null
