@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.vin.chat.Hub
 
-private val TIMERS = listOf(
+val TIMERS = listOf(
     "0" to "Off",
     "300" to "5m",
     "600" to "10m",
