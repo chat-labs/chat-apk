@@ -29,23 +29,23 @@ private fun c(name: String, vararg aliases: String, args: String = "", help: Str
 
 // In the menu's order.
 val COMMANDS = listOf(
-    c("new", help = "make a room"),
-    c("join", "j", args = "[INVITE]", help = "join a room with its invite, or its id and password"),
-    c("invite", help = "this room's invite, to copy or show as a QR code"),
-    c("peers", "who", help = "who is here, with their verify codes"),
-    c("files", help = "the files offered here"),
-    c("msg", "dm", args = "NICK TEXT", help = "a direct message to one peer; nobody else gets it"),
-    c("reply", "re", args = "NICK TEXT", help = "answer NICK's last message, quoting the start of it"),
-    c("verify", "v", args = "NICK [ok|no]", help = "compare a peer's verify code; ok once it matches"),
-    c("ignore", args = "NICK [off]", help = "hide what a peer says, wherever they sign with that key; off shows it again"),
-    c("call", args = "NICK", help = "open the room only you and a verified key can work out"),
-    c("timer", args = "[off|5m|10m|1h|1d|1w]", help = "messages here go after this long; alone, the room's settings"),
-    c("nick", "name", args = "NAME", help = "your name in every room"),
-    c("net", help = "network report and diagnosis, in the console"),
-    c("newtor", help = "new Tor circuits and onion address for this room"),
-    c("set", help = "the settings"),
+    c("new", help = "create a room"),
+    c("join", "j", args = "[INVITE]", help = "join by invite, or id and password"),
+    c("invite", help = "this room's invite"),
+    c("peers", "who", help = "peers"),
+    c("files", help = "files"),
+    c("msg", "dm", args = "NICK TEXT", help = "direct message"),
+    c("reply", "re", args = "NICK TEXT", help = "reply to NICK's last message"),
+    c("verify", "v", args = "NICK [ok|no]", help = "compare verify codes"),
+    c("ignore", args = "NICK [off]", help = "hide NICK's messages; off shows them"),
+    c("call", args = "NICK", help = "daily room with a verified key"),
+    c("timer", args = "[off|5m|10m|1h|1d|1w]", help = "message timer"),
+    c("nick", "name", args = "NAME", help = "set nick"),
+    c("net", help = "network report"),
+    c("newtor", help = "new Tor circuits"),
+    c("set", help = "settings"),
     c("lock", help = "lock the screen"),
-    c("leave", "part", help = "leave this room; a kept one goes offline"),
+    c("leave", "part", help = "leave this room"),
 )
 
 fun findCommand(word: String) = COMMANDS.firstOrNull { word in it.names }
@@ -79,13 +79,13 @@ fun runCommand(line: String, room: Room, nav: Nav): Boolean {
             return true
         }
         if (COMMANDS.none { c -> c.names.any { it.startsWith(word) } }) return false
-        refuse("no command /$word - pick one from the list")
+        refuse("unknown command /$word")
     }
-    if (arg.isEmpty() && cmd.args.isNotEmpty() && !cmd.args.startsWith("[")) refuse("/${cmd.name} ${cmd.args}: ${cmd.help}")
+    if (arg.isEmpty() && cmd.args.isNotEmpty() && !cmd.args.startsWith("[")) refuse("usage: /${cmd.name} ${cmd.args}")
     when (cmd.name) {
         "new" -> nav.go(Screen.New)
         "join" -> nav.go(Screen.Join(arg))
-        "invite" -> if (room.isCall || room.info == null) refuse("this room has no invite") else nav.go(Screen.Invite(room.id))
+        "invite" -> if (room.isCall || room.info == null) refuse("no invite") else nav.go(Screen.Invite(room.id))
         "peers" -> nav.go(Screen.Peers(room.id))
         "files" -> nav.go(Screen.Files(room.id))
         "msg" -> peerAndText(room, arg).let { (peer, text) -> room.dm(peer.id, text) }
@@ -93,14 +93,14 @@ fun runCommand(line: String, room: Room, nav: Nav): Boolean {
             val (peer, text) = peerAndText(room, arg)
             val last = room.items.lastOrNull {
                 it.line.kind == LineKind.MESSAGE && it.line.from == peer.id && !it.line.direct && it.line.mid != null
-            } ?: refuse("nothing from ${peer.name} to answer yet")
+            } ?: refuse("no message from ${peer.name}")
             room.reply(last.line.mid!!, text)
         }
         "verify" -> {
             val answer = arg.substringAfterLast(' ', "").takeIf { it == "ok" || it == "no" }
             val peer = findPeer(room, if (answer == null) arg else arg.substringBeforeLast(' '))
             when {
-                peer.code.hex == null -> refuse("no code with ${peer.name} yet - wait for the handshake to finish")
+                peer.code.hex == null -> refuse("no verify code yet")
                 answer == null -> nav.go(Screen.PeerInfo(room.id, peer.id))
                 else -> room.verify(peer.id, answer == "ok")
             }
@@ -111,13 +111,13 @@ fun runCommand(line: String, room: Room, nav: Nav): Boolean {
         }
         "call" -> {
             val who = arg.removePrefix("@")
-            if (Hub.identity == null) refuse("a call needs a signing key of yours, which they've verified - make one in the settings")
+            if (Hub.identity == null) refuse("no signing key")
             val keys = Hub.verifiedKeys.filter { it.nick.equals(who, ignoreCase = true) }
             val key = keys.singleOrNull() ?: refuse(
-                if (keys.isEmpty()) "no verified key goes by $who"
-                else "more than one verified key goes by $who - forget the one that's gone in the settings",
+                if (keys.isEmpty()) "no verified key: $who"
+                else "several verified keys: $who",
             )
-            val call = Hub.call(key, room.info?.route ?: Hub.settings.route) ?: refuse("couldn't start the call")
+            val call = Hub.call(key, room.info?.route ?: Hub.settings.route) ?: refuse("call failed")
             nav.home(Screen.Chat(call.id))
         }
         "timer" -> {
@@ -125,7 +125,7 @@ fun runCommand(line: String, room: Room, nav: Nav): Boolean {
                 nav.go(Screen.RoomSettings(room.id))
             } else {
                 val t = TIMERS.firstOrNull { it.second.equals(arg, ignoreCase = true) }
-                    ?: refuse("/timer ${TIMERS.joinToString(", ") { it.second.lowercase() }}")
+                    ?: refuse("usage: /timer ${TIMERS.joinToString("|") { it.second.lowercase() }}")
                 room.setTimer(t.first.toInt())
             }
         }
@@ -154,8 +154,8 @@ private fun findPeer(room: Room, typed: String): Peer {
     val t = typed.trim().removePrefix("@")
     val found = called(room, t)
     return found.singleOrNull() ?: refuse(
-        if (found.isEmpty()) "nobody called $t is here"
-        else "more than one $t is here - add the start of their id, as ${t.substringBefore('#')}#1a2b",
+        if (found.isEmpty()) "no peer: $t"
+        else "several peers: $t - use nick#id",
     )
 }
 
@@ -173,7 +173,7 @@ private fun peerAndText(room: Room, arg: String): Pair<Peer, String> =
         .lastOrNull()
         ?: run {
             findPeer(room, arg.substringBefore(' '))
-            refuse("a name, then the text")
+            refuse("usage: NICK TEXT")
         }
 
 // Over the composer while a command is typed: what it can be, and what each takes.
