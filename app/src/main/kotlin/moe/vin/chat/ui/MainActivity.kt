@@ -64,6 +64,7 @@ sealed interface Screen {
     data class Peers(val room: String) : Screen
     data class PeerInfo(val room: String, val peer: String) : Screen
     data class Files(val room: String) : Screen
+    data class Console(val room: String) : Screen
     data class PictureView(val room: String, val num: Int) : Screen
     data class Invite(val room: String) : Screen
     data class RoomSettings(val room: String) : Screen
@@ -272,6 +273,7 @@ private fun ScreenFor(nav: Nav, s: Screen) {
         is Screen.Peers -> PeersScreen(nav, s.room)
         is Screen.PeerInfo -> PeerScreen(nav, s.room, s.peer)
         is Screen.Files -> FilesScreen(nav, s.room)
+        is Screen.Console -> ConsoleScreen(nav, s.room)
         is Screen.PictureView -> PictureScreen(nav, s.room, s.num)
         is Screen.Invite -> InviteScreen(nav, s.room)
         is Screen.RoomSettings -> RoomSettingsScreen(nav, s.room)

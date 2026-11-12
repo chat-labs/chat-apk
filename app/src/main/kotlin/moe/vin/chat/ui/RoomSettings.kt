@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,7 +27,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import moe.vin.chat.Hub
-import moe.vin.chat.engine.LineKind
 
 private val TIMERS = listOf(
     "0" to "Off",
@@ -52,7 +50,6 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
     var forgetting by remember { mutableStateOf(false) }
     var clearingHistory by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
-    var showLog by remember { mutableStateOf(false) }
     var showLinks by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var portDialog by remember { mutableStateOf(false) }
@@ -171,26 +168,11 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             }
             Spacer(Modifier.height(6.dp))
             RowItem(
-                if (showLog) "Hide chat's notes" else "Show chat's notes",
-                "The sandbox, tor and the network, as chat logs them",
-                onClick = { showLog = !showLog },
+                "Console",
+                "What chat says about this room, Tor and the network, and its commands",
+                onClick = { nav.go(Screen.Console(roomId)) },
+                leading = Icons.Console,
             )
-            if (showLog) {
-                Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(Modifier.padding(bottom = 6.dp)) {
-                        Text(
-                            "Run :net report",
-                            style = Type.label,
-                            color = p.accent,
-                            modifier = Modifier.clickable { room.runCommand("net") },
-                        )
-                    }
-                    for (l in room.logs) Text(l, style = Type.label, color = p.faint)
-                    for (i in room.items.filter { it.line.kind == LineKind.NOTE }.takeLast(40)) {
-                        Text(i.line.text, style = Type.label, color = p.faint)
-                    }
-                }
-            }
             if (info?.route == "tor") {
                 RowItem(
                     "New Tor circuits",

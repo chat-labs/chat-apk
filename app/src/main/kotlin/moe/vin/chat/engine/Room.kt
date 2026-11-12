@@ -188,6 +188,9 @@ class Item(val seq: Long, val time: Long, val line: Line, val old: Boolean) {
 
 enum class Status { STARTING, OPEN, CLOSED, FAILED }
 
+// A line of the room's console: chat's notes, its log and its warnings, kept out of the chat.
+data class ConsoleLine(val at: String, val text: String, val warn: Boolean)
+
 enum class Tick { SENT, DELIVERED, MISSED }
 
 interface RoomHost {
@@ -206,7 +209,7 @@ class Room(val id: String, label: String, private val host: RoomHost) {
     var status by mutableStateOf(Status.STARTING)
     var info by mutableStateOf<RoomInfo?>(null)
     val items = mutableStateListOf<Item>()
-    val logs = mutableStateListOf<String>()
+    val console = mutableStateListOf<ConsoleLine>()
     var peers by mutableStateOf(emptyList<Peer>())
     var net by mutableStateOf<Net?>(null)
     var files by mutableStateOf(emptyMap<Int, FileItem>())
@@ -260,18 +263,19 @@ class Room(val id: String, label: String, private val host: RoomHost) {
                 if (e.movedFrom != null) {
                     callPeer = null
                     callDay = 0L
-                    items += Item(seq++, now(), Line("", LineKind.NOTE, "moved here from the room ${e.movedFrom}", null), false)
+                    say("", "moved here from the room ${e.movedFrom}", warn = false)
                 }
                 if (e.day != null) callDay = e.day
                 info = e
                 status = Status.OPEN
                 host.opened(this, e)
             }
-            is Line -> add(e)
-            is Log -> {
-                logs += e.text
-                if (logs.size > LOGS_MAX) logs.removeAt(0)
+            // Notes go to the console only; warnings to the chat as well.
+            is Line -> {
+                if (e.kind != LineKind.MESSAGE) say(e.at, e.text, warn = e.kind == LineKind.WARN)
+                if (e.kind != LineKind.NOTE) add(e)
             }
+            is Log -> say(e.at, e.text, warn = false)
             is Notify -> host.notify(this, e)
             is Delivery -> ticks[e.own] = when {
                 e.missed != null -> Tick.MISSED
@@ -301,10 +305,18 @@ class Room(val id: String, label: String, private val host: RoomHost) {
             }
             is MoveAsk -> moveAsk = if (e.seq == 0) null else e
             is MovePlan -> movePlan = e
-            is Failure -> error = e.text
+            is Failure -> {
+                error = e.text
+                say("", e.text, warn = true)
+            }
             is Bye -> status = Status.CLOSED
             is Hello, is IdentityKey, is Suggestion -> {}
         }
+    }
+
+    private fun say(at: String, text: String, warn: Boolean) {
+        console += ConsoleLine(at.ifEmpty { stampFmt.get()!!.clock.format(Date()) }, text.removePrefix("* "), warn)
+        if (console.size > CONSOLE_MAX) console.removeRange(0, console.size - CONSOLE_MAX)
     }
 
     private fun add(line: Line) {
@@ -399,6 +411,6 @@ class Room(val id: String, label: String, private val host: RoomHost) {
 
     private companion object {
         const val ITEMS_MAX = 5000
-        const val LOGS_MAX = 200
+        const val CONSOLE_MAX = 500
     }
 }

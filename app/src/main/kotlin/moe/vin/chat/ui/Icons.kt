@@ -27,6 +27,7 @@ object Icons {
     val Sliders = icon("sliders", "M4 7 H13 M17 7 H20 M15 5 V9 M4 17 H7 M11 17 H20 M9 15 V19")
     val Lock = icon("lock", "M6 11 H18 V20 H6 Z M8.5 11 V8 a3.5 3.5 0 0 1 7 0 V11")
     val Unlock = icon("unlock", "M6 11 H18 V20 H6 Z M8.5 11 V8 a3.5 3.5 0 0 1 6.7 -1.4")
+    val Console = icon("console", "M4 5 H20 V19 H4 Z M8 9.5 L11 12.5 L8 15.5 M13 15.5 H16.5")
     val Shield = icon("shield", "M12 3.5 L19 6.5 V11.5 C19 16 16 19 12 20.5 C8 19 5 16 5 11.5 V6.5 Z")
     val ShieldCheck = icon("shield-check", "M12 3.5 L19 6.5 V11.5 C19 16 16 19 12 20.5 C8 19 5 16 5 11.5 V6.5 Z M9 12 L11.2 14.2 L15.5 9.8")
     val Qr = icon("qr", "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H16.5 M19.5 14 H20 V16.5 M14 17.5 V20 H16.5 M20 20 v0.01")
