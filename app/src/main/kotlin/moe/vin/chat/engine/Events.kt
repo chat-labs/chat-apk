@@ -11,6 +11,9 @@ sealed interface Event
 
 data class Hello(val version: String) : Event
 
+// A new room's id and password, made up by chat.
+data class Suggestion(val room: String, val password: String) : Event
+
 data class IdentityKey(
     val kind: String,
     val fingerprint: String,
@@ -264,6 +267,7 @@ fun parseEvent(text: String): Event? {
     val o = try { JSONObject(text) } catch (e: Exception) { return null }
     return when (o.optString("t")) {
         "hello" -> Hello(o.optString("version"))
+        "suggest" -> Suggestion(o.optString("room"), o.optString("password"))
         "identity" -> IdentityKey(
             o.optString("kind"),
             o.optString("fingerprint"),
@@ -323,4 +327,5 @@ object Cmd {
     fun ignored(list: List<TrustedKey>) = cmd("ignored").put("list", JSONArray().apply { list.forEach { put(it.toJson()) } })
     fun settings(o: JSONObject) = o.put("cmd", "settings")
     fun quit(kept: Boolean) = cmd("quit").put("kept", kept)
+    fun suggest() = cmd("suggest")
 }
