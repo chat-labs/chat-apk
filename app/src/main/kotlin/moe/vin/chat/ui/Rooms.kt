@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -497,12 +498,20 @@ fun NewRoomScreen(nav: Nav) {
     val sidebar = LocalSidebar.current
     val showBack = !(sidebar?.listVisible == true && nav.stack.size <= 2)
     var label by remember { mutableStateOf("") }
+    var id by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var route by remember { mutableStateOf(Hub.settings.route) }
     var keep by remember { mutableStateOf(true) }
     var history by remember { mutableStateOf(false) }
     var port by remember { mutableStateOf("") }
     var peers by remember { mutableStateOf("") }
+    // A random id and password to start from, made up by chat; what's typed first stays.
+    LaunchedEffect(Unit) {
+        Hub.suggestRoom()?.let {
+            if (id.isEmpty()) id = it.room
+            if (password.isEmpty()) password = it.password
+        }
+    }
     Page("New room", onBack = if (showBack) nav::back else null) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding()) {
             Spacer(Modifier.height(18.dp))
@@ -510,8 +519,12 @@ fun NewRoomScreen(nav: Nav) {
                 PrivateField(label, { label = it }, Modifier.fillMaxWidth(), placeholder = "nobody else sees it")
             }
             Spacer(Modifier.height(14.dp))
-            Field("Password (optional)", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(password, { password = it }, Modifier.fillMaxWidth(), placeholder = "blank: random words in the invite")
+            Field("Room id", Modifier.padding(horizontal = 20.dp)) {
+                PrivateField(id, { id = it }, Modifier.fillMaxWidth(), placeholder = "blank: made up as it opens", mono = true)
+            }
+            Spacer(Modifier.height(14.dp))
+            Field("Password", Modifier.padding(horizontal = 20.dp)) {
+                PrivateField(password, { password = it }, Modifier.fillMaxWidth(), placeholder = "blank: random words")
             }
             Spacer(Modifier.height(22.dp))
             RoomOptions(
@@ -528,7 +541,7 @@ fun NewRoomScreen(nav: Nav) {
             )
             Spacer(Modifier.height(14.dp))
             Text(
-                "chat makes up the room's id and a password in words unless you set your own. Its invite holds both: send it over a channel you trust, as anyone who has it can join.",
+                "A random id and password in words, made up by chat: keep them or set your own. The invite holds both: send it over a channel you trust, as anyone who has it can join.",
                 style = Type.small,
                 color = LocalPalette.current.muted,
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -539,7 +552,7 @@ fun NewRoomScreen(nav: Nav) {
             Button("Make the room", {
                 val portNum = port.trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 0
                 val room = Hub.start(
-                    room = null,
+                    room = id.trim().ifEmpty { null },
                     password = password.trim().ifEmpty { null },
                     invite = null,
                     label = label.trim(),
@@ -548,6 +561,7 @@ fun NewRoomScreen(nav: Nav) {
                     keep = keep,
                     port = portNum,
                     peers = peers.trim(),
+                    create = true,
                 )
                 nav.replace(Screen.Invite(room.id))
             }, Modifier.fillMaxWidth())

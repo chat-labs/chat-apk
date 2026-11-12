@@ -303,7 +303,7 @@ class Room(val id: String, label: String, private val host: RoomHost) {
             is MovePlan -> movePlan = e
             is Failure -> error = e.text
             is Bye -> status = Status.CLOSED
-            is Hello, is IdentityKey -> {}
+            is Hello, is IdentityKey, is Suggestion -> {}
         }
     }
 
