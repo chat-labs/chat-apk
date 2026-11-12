@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.3
+
+- Commands in the composer: `/` lists them with their arguments, and Send runs one (`/msg`,
+  `/reply`, `/verify`, `/ignore`, `/call`, `/timer`, `/nick`, `/net`, `/newtor`, `/leave` and
+  more). A refused command keeps the draft. `:peers` opens Peers.
+- No counts that give you away: the lock screen and the running notification don't count rooms,
+  and a wrong passphrase doesn't say how many tries are left before self-destruct.
+- Panic says what it does in each mode; without erase, that nothing kept is erased. The erase
+  texts name what's deleted: the vault (kept rooms, histories, settings, keys) and received files.
+- Shorter, technical text throughout.
+
+Still a pre-release signed with the local test key, so it installs over 0.1.2.
+
 ## 0.1.2
 
 - Tor is the default way rooms reach peers, for new settings and on the first screen.
