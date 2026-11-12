@@ -2,7 +2,6 @@ package moe.vin.chat.ui
 
 import android.app.Activity
 import android.app.KeyguardManager
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -46,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.vin.chat.Hub
-import moe.vin.chat.engine.Status
 import moe.vin.chat.store.Settings
 import moe.vin.chat.store.Vault
 
@@ -56,12 +54,12 @@ private const val PASSPHRASE_MIN = 8
 fun Protection(mode: Vault.Mode, selected: Boolean, onClick: () -> Unit) {
     val p = LocalPalette.current
     val (title, body) = when (mode) {
-        Vault.Mode.BOTH -> "Passphrase and this phone" to
-            "A passphrase each time chat opens, and a key in this phone's secure hardware that never leaves it. A copy of chat's files can't be opened anywhere else, even with the passphrase."
-        Vault.Mode.DEVICE -> "This phone only" to
-            "Opens whenever the phone is unlocked, with no passphrase to type. Anyone who gets into the unlocked phone gets your rooms and histories."
+        Vault.Mode.BOTH -> "Passphrase and hardware key" to
+            "Passphrase on every open, and a key in this phone's secure hardware. A copy of the files can't be opened on another device."
+        Vault.Mode.DEVICE -> "Hardware key only" to
+            "No passphrase. Opens whenever the phone is unlocked."
         Vault.Mode.PASSPHRASE -> "Passphrase only" to
-            "A passphrase each time chat opens. A copy of chat's files could be opened on another phone with it."
+            "Passphrase on every open. A copy of the files opens anywhere with it."
     }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (selected) p.surface else Color.Transparent)
@@ -93,7 +91,7 @@ fun SetupScreen() {
     val problem = when {
         !mode.needsPassphrase -> null
         pass.length < PASSPHRASE_MIN -> "at least $PASSPHRASE_MIN characters"
-        pass != again -> "the two don't match yet"
+        pass != again -> "doesn't match"
         else -> null
     }
     Column(
@@ -105,18 +103,18 @@ fun SetupScreen() {
         Text("chat", style = Type.title.copy(fontSize = Type.title.fontSize * 1.4f), color = p.text)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Encrypted chat without a server: rooms that peers reach directly, or through Tor. Nothing is kept on this phone unless you keep it, and what you keep is sealed.",
+            "Serverless encrypted chat, direct or over Tor. Nothing is stored unless you keep it; what you keep is encrypted.",
             style = Type.body, color = p.muted,
         )
         Spacer(Modifier.height(28.dp))
-        Text("HOW CHAT SEALS WHAT IT KEEPS", style = Type.section, color = p.faint)
+        Text("VAULT", style = Type.section, color = p.faint)
         Spacer(Modifier.height(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             for (m in Vault.Mode.entries) Protection(m, m == mode) { mode = m }
         }
         if (mode.needsPassphrase) {
             Spacer(Modifier.height(22.dp))
-            Field("Passphrase") { PrivateField(pass, { pass = it }, Modifier.fillMaxWidth(), placeholder = "a long one, only you know", password = true) }
+            Field("Passphrase") { PrivateField(pass, { pass = it }, Modifier.fillMaxWidth(), password = true) }
             Spacer(Modifier.height(12.dp))
             Field("Again") { PrivateField(again, { again = it }, Modifier.fillMaxWidth(), password = true) }
             if (problem != null && pass.isNotEmpty()) {
@@ -124,18 +122,18 @@ fun SetupScreen() {
                 Text(problem, style = Type.small, color = p.faint)
             }
             Spacer(Modifier.height(6.dp))
-            Text("There's no way to get it back: forget it and what's kept is gone.", style = Type.small, color = p.faint)
+            Text("Unrecoverable if forgotten.", style = Type.small, color = p.faint)
         }
         Spacer(Modifier.height(22.dp))
-        Field("Nick") { PrivateField(nick, { nick = it }, Modifier.fillMaxWidth(), placeholder = "blank: a random one in each room") }
+        Field("Nick") { PrivateField(nick, { nick = it }, Modifier.fillMaxWidth(), placeholder = "blank: random per room") }
         Spacer(Modifier.height(22.dp))
-        Text("HOW ROOMS REACH PEERS", style = Type.section, color = p.faint)
+        Text("ROUTE", style = Type.section, color = p.faint)
         Spacer(Modifier.height(10.dp))
         Choice(listOf("udp" to "Direct", "tor" to "Tor"), route, { route = it })
         Spacer(Modifier.height(8.dp))
         Text(
-            if (route == "udp") "Straight to peers over UDP, found through the BitTorrent DHT and your network. Faster, but peers see your IP address."
-            else "Through Tor onion services, which hide your IP address from peers and everyone else. Connecting takes longer.",
+            if (route == "udp") "UDP, peers found via the BitTorrent DHT and LAN. Peers see your IP address."
+            else "Tor onion services. Hides your IP address; slower to connect.",
             style = Type.small, color = p.muted,
         )
         Spacer(Modifier.height(28.dp))
@@ -188,16 +186,12 @@ fun UnlockScreen(uiLock: Boolean = false) {
                 val chars = if (mode?.needsPassphrase == true) pass.toCharArray() else null
                 if (uiLock) Hub.unlockUi(chars) else Hub.unlock(chars)
             } catch (e: Vault.WrongPassphrase) {
-                val left = e.triesLeft
-                error = if (left != null) {
-                    "That passphrase doesn't open it ($left ${if (left == 1) "try" else "tries"} left before erase)."
-                } else {
-                    "That passphrase doesn't open it."
-                }
+                // The tries left before self-destruct stay unsaid: they'd tell whoever is typing it's on.
+                error = "Wrong passphrase."
             } catch (e: Vault.VaultDestroyed) {
-                Toast.makeText(ctx, "Vault erased after too many wrong passphrases", Toast.LENGTH_LONG).show()
+                // Setup follows, with nothing saying why.
             } catch (e: Exception) {
-                error = "This phone's key can't open it: ${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}"
+                error = "Hardware key failed: ${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}"
             }
             pass = ""
             busy = false
@@ -207,8 +201,6 @@ fun UnlockScreen(uiLock: Boolean = false) {
     LaunchedEffect(uiLock) {
         if (!uiLock && mode?.needsPassphrase == false) open()
     }
-
-    val openRooms = if (uiLock) Hub.rooms.values.count { it.status == Status.OPEN || it.status == Status.STARTING } else 0
 
     Column(
         Modifier
@@ -225,11 +217,9 @@ fun UnlockScreen(uiLock: Boolean = false) {
         Spacer(Modifier.height(8.dp))
         Text(
             when {
-                uiLock && openRooms > 0 ->
-                    "Locked. ${if (openRooms == 1) "1 room stays" else "$openRooms rooms stay"} connected in the background."
                 uiLock -> "Locked."
-                mode?.needsPassphrase == true -> "Sealed. Its passphrase opens it."
-                else -> "Opening with this phone's key…"
+                mode?.needsPassphrase == true -> "Sealed."
+                else -> "Opening…"
             },
             style = Type.body,
             color = p.muted,
@@ -277,7 +267,7 @@ fun UnlockScreen(uiLock: Boolean = false) {
     }
     if (erasing) Confirm(
         title = "Erase everything?",
-        text = "Every kept room, history, file and the signing key go for good, and chat starts again from the beginning.",
+        text = "Deletes the vault (kept rooms, histories, settings, signing key) and received files.",
         action = "Erase",
         danger = true,
         onConfirm = { erasing = false; Hub.eraseEverything() },

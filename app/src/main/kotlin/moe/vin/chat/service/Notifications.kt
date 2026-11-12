@@ -21,11 +21,11 @@ object Notifications {
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(RUNNING, "Rooms open", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Shown while chat keeps rooms connected"
+            description = "While rooms are connected"
             setShowBadge(false)
         })
         nm.createNotificationChannel(NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "New messages, as much of them as the preview setting allows"
+            description = "New messages"
             lockscreenVisibility = Notification.VISIBILITY_PRIVATE
         })
     }

@@ -85,7 +85,7 @@ fun openUrl(ctx: Context, url: String) {
         val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ctx.startActivity(view)
     } catch (e: Exception) {
-        Toast.makeText(ctx, "No browser here opens it", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, "No browser", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -93,7 +93,7 @@ fun openUrl(ctx: Context, url: String) {
 fun openReceived(ctx: Context, path: String) {
     val f = File(path)
     if (!f.isFile) {
-        Toast.makeText(ctx, "File is no longer there", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, "File missing", Toast.LENGTH_SHORT).show()
         return
     }
     val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
@@ -102,7 +102,7 @@ fun openReceived(ctx: Context, path: String) {
     try {
         ctx.startActivity(Intent.createChooser(view, null))
     } catch (e: Exception) {
-        Toast.makeText(ctx, "No app here opens it", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, "No app for this file", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -151,8 +151,8 @@ fun roomState(room: Room): String {
             "waiting for tor ${Hub.tor.state.progress}%" else "starting…"
         Status.OPEN -> when {
             net == null -> "opening…"
-            !net.ready -> if (room.info?.created == true) "open · nobody here yet" else "connecting…"
-            net.online == 0 -> if (room.isCall) "waiting for ${room.callPeer?.nick ?: "peer"}" else "nobody else here"
+            !net.ready -> if (room.info?.created == true) "open · no peers" else "connecting…"
+            net.online == 0 -> if (room.isCall) "waiting for ${room.callPeer?.nick ?: "peer"}" else "no peers"
             else -> if (net.online == 1) "1 peer" else "${net.online} peers"
         }
         Status.CLOSED -> "closed"

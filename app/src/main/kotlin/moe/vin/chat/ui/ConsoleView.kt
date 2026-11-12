@@ -46,7 +46,7 @@ fun ConsoleScreen(nav: Nav, roomId: String) {
         val lines = room.console
         if (lines.isEmpty()) {
             Text(
-                "Nothing yet. What chat says about this room, Tor and the network comes here.",
+                "Empty.",
                 style = Type.small,
                 color = p.faint,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(20.dp),
@@ -72,7 +72,7 @@ fun ConsoleScreen(nav: Nav, roomId: String) {
                 Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(p.surface)
                     .border(1.dp, p.line, RoundedCornerShape(10.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
-                PrivateField(command, { command = it }, Modifier.fillMaxWidth(), placeholder = "a command: net or peers", mono = true, onDone = run)
+                PrivateField(command, { command = it }, Modifier.fillMaxWidth(), placeholder = "net, peers", mono = true, onDone = run)
             }
             IconAction(Icons.Send, "Run", run, enabled = command.isNotBlank())
         }

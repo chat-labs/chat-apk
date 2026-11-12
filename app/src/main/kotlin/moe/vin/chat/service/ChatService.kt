@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import moe.vin.chat.Hub
 import moe.vin.chat.R
-import moe.vin.chat.engine.Status
 import moe.vin.chat.engine.Tor
 
 // Keeps the app running while rooms are open: Android would otherwise stop it, and its chat and tor
@@ -44,7 +43,7 @@ class ChatService : Service() {
         ServiceCompat.startForeground(
             this,
             Notifications.RUNNING_ID,
-            notification(Hub.rooms.size, Hub.tor.state, Hub.uiLocked),
+            notification(Hub.tor.state, Hub.uiLocked),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         syncWakeLock(Hub.settings.stayAwake)
@@ -58,7 +57,6 @@ class ChatService : Service() {
         if (watch == null) watch = Hub.scope.launch {
             snapshotFlow {
                 ServiceSnap(
-                    open = Hub.rooms.values.count { it.status == Status.OPEN || it.status == Status.STARTING },
                     all = Hub.rooms.size,
                     tor = Hub.tor.state,
                     stayAwake = Hub.settings.stayAwake,
@@ -68,7 +66,7 @@ class ChatService : Service() {
                 syncWakeLock(snap.stayAwake)
                 if (snap.all == 0) stopSelf()
                 else getSystemService(NotificationManager::class.java)
-                    .notify(Notifications.RUNNING_ID, notification(snap.open, snap.tor, snap.locked))
+                    .notify(Notifications.RUNNING_ID, notification(snap.tor, snap.locked))
             }
         }
         return START_NOT_STICKY
@@ -94,20 +92,20 @@ class ChatService : Service() {
         super.onDestroy()
     }
 
-    private fun notification(open: Int, tor: Tor.State, locked: Boolean): Notification {
+    // No room count: the notification shade shows it to anyone holding the phone.
+    private fun notification(tor: Tor.State, locked: Boolean): Notification {
         val quit = PendingIntent.getService(this, 1, Intent(this, ChatService::class.java).setAction(ACTION_QUIT), PendingIntent.FLAG_IMMUTABLE)
         val lock = PendingIntent.getService(this, 2, Intent(this, ChatService::class.java).setAction(ACTION_LOCK), PendingIntent.FLAG_IMMUTABLE)
         val torText = when (tor.phase) {
-            Tor.Phase.STARTING -> " · Tor ${tor.progress}%"
-            Tor.Phase.READY -> " · Tor connected"
-            Tor.Phase.FAILED -> " · Tor failed"
-            Tor.Phase.OFF -> ""
+            Tor.Phase.STARTING -> "Tor ${tor.progress}%"
+            Tor.Phase.READY -> "Tor connected"
+            Tor.Phase.FAILED -> "Tor failed"
+            Tor.Phase.OFF -> "Running"
         }
         val lockText = if (locked) " · locked" else ""
         return Notification.Builder(this, Notifications.RUNNING)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (open == 1) "1 room open" else "$open rooms open")
-            .setContentText("chat keeps them connected$torText$lockText")
+            .setContentTitle(torText + lockText)
             .setContentIntent(Notifications.open(this, null))
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_SECRET)
@@ -119,7 +117,6 @@ class ChatService : Service() {
     }
 
     private data class ServiceSnap(
-        val open: Int,
         val all: Int,
         val tor: Tor.State,
         val stayAwake: Boolean,

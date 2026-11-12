@@ -74,7 +74,7 @@ fun PeersScreen(nav: Nav, roomId: String) {
             }
             if (room.peers.isEmpty()) item {
                 Text(
-                    "Nobody else is connected yet.",
+                    "No peers.",
                     style = Type.small,
                     color = p.faint,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -141,7 +141,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
     val ctx = LocalContext.current
     if (room == null || peer == null) {
         Page("Peer", onBack = nav::back) {
-            Text("They're not connected any more.", style = Type.body, color = p.muted, modifier = Modifier.padding(20.dp))
+            Text("Disconnected.", style = Type.body, color = p.muted, modifier = Modifier.padding(20.dp))
         }
         return
     }
@@ -156,7 +156,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 val words = peer.code.words
                 if (words == null) {
-                    Text("There's no code yet: the handshake is still going.", style = Type.small, color = p.muted)
+                    Text("No code yet: handshake in progress.", style = Type.small, color = p.muted)
                 } else {
                     Box(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.surface)
@@ -182,7 +182,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
                     codeTag(peer)
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Read it out to ${peer.nick} over another channel, in person or on a call. If theirs is the same, nobody is sitting between you. Until then, someone else with this room's password could be.",
+                        "Compare it with ${peer.nick} over another channel. If it matches, nobody is in between; until then, anyone with the room's password could be.",
                         style = Type.small,
                         color = p.muted,
                     )
@@ -208,7 +208,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
             Section("Signing identity")
             Column(Modifier.padding(horizontal = 20.dp)) {
                 if (peer.identity == "none") {
-                    Text("They don't sign with one.", style = Type.small, color = p.muted)
+                    Text("No signing key.", style = Type.small, color = p.muted)
                 } else {
                     Text(
                         "${peer.identity} · ${peer.signed ?: "unverified"}",
@@ -222,7 +222,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
                         }
                     }
                     Text(
-                        "Once the code matches, their key counts as verified: in another room, the same key needs no comparing.",
+                        "A matching code verifies their key in every room.",
                         style = Type.small,
                         color = p.faint,
                     )
@@ -240,7 +240,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
             if (peer.dm) {
                 RowItem(
                     "Message directly",
-                    "Only ${peer.nick} gets it, never passed on",
+                    "Only ${peer.nick} receives it",
                     onClick = { nav.go(Screen.Chat(roomId, peer.id)) },
                     leading = Icons.Mail,
                 )
@@ -248,7 +248,7 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
             if (trusted != null && Hub.identity != null && !room.isCall) {
                 RowItem(
                     "Call @${trusted.nick}",
-                    "Open your shared daily contact room with them",
+                    "Today's room derived from both signing keys",
                     onClick = {
                         Hub.call(trusted, room.info?.route ?: Hub.settings.route)?.let { callRoom ->
                             nav.home(Screen.Chat(callRoom.id))
@@ -258,8 +258,8 @@ fun PeerScreen(nav: Nav, roomId: String, peerId: String) {
                 )
             }
             RowItem(
-                if (peer.ignored) "Show what they say again" else "Ignore",
-                if (peer.ignored) null else "Hides what they say on this phone; it's still passed on to others",
+                if (peer.ignored) "Unignore" else "Ignore",
+                if (peer.ignored) null else "Hidden on this phone only; still relayed to others",
                 onClick = { room.ignore(peer.id, !peer.ignored) },
                 leading = Icons.Close,
             )

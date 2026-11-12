@@ -166,7 +166,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
     val route = if (room.info?.route == "tor") "tor" else "direct"
     val timerPart = room.timer?.takeIf { it.seconds > 0 }?.let { "${durationText(it.seconds)} timer" }
     val subtitle = if (dm != null) {
-        "direct · only they get these"
+        "direct"
     } else {
         listOfNotNull(roomState(room), route, timerPart).joinToString(" · ")
     }
@@ -271,9 +271,9 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
     ) {
         room.moveAsk?.let { ask ->
             Banner(
-                "${ask.from} asks you to move this room to a new one" +
+                "${ask.from} asks to move to a new room" +
                     (if (ask.coming > 0) ", with ${ask.names}" else "") +
-                    ". Nobody left behind is told where it went.",
+                    ". Those left behind aren't told where.",
                 listOf("Move" to { room.answerMove(true) }, "Stay" to { room.answerMove(false) }),
             )
         }
@@ -440,7 +440,7 @@ private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, nav: Nav) {
                 }
                 DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }, containerColor = p.raised) {
                     DropdownMenuItem(
-                        text = { Text("Send file (clean pictures)", style = Type.small) },
+                        text = { Text("Send file (pictures cleaned)", style = Type.small) },
                         onClick = { attachMenu = false; attachAsIs = false; pick.launch(arrayOf("*/*")) },
                     )
                     DropdownMenuItem(
@@ -759,11 +759,11 @@ private fun Messages(
             Text(
                 when {
                     room.status == Status.OPEN && inRoom && room.isCall ->
-                        "Shared call room for today. Once ${room.callPeer?.nick ?: "they"} open :call for you too, you meet here."
+                        "Today's call room with ${room.callPeer?.nick ?: "them"}. They join with /call."
                     room.status == Status.OPEN && inRoom ->
-                        "Nothing here yet. Compare verify codes with whoever joins before you trust them."
-                    inRoom -> "Opening the room…"
-                    else -> "No direct messages yet."
+                        "No messages. Compare verify codes with whoever joins."
+                    inRoom -> "Opening…"
+                    else -> "No direct messages."
                 },
                 style = Type.small,
                 color = p.faint,
@@ -1139,8 +1139,8 @@ private fun Bubble(
                             else -> Icons.Check
                         },
                         when (tick) {
-                            Tick.DELIVERED -> "Everyone has it"
-                            Tick.MISSED -> "Someone didn't get it"
+                            Tick.DELIVERED -> "Delivered"
+                            Tick.MISSED -> "Not delivered to everyone"
                             else -> "Sent"
                         },
                         tint = when (tick) {
@@ -1268,7 +1268,7 @@ fun LinkDialog(url: String, sender: String?, onDismiss: () -> Unit) {
                     Text(url, style = Type.label, color = p.text)
                 }
                 Text(
-                    "Your browser opens this directly — not through chat's Tor or relays — so the site sees your IP address.",
+                    "Opens in your browser, outside Tor: the site sees your IP address.",
                     style = Type.small,
                     color = p.warn,
                 )

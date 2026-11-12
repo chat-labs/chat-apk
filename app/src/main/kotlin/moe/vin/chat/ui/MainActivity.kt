@@ -252,7 +252,7 @@ private fun Panes(nav: Nav) {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Pick a room, or make one", style = Type.small, color = p.faint, textAlign = TextAlign.Center)
+                    Text("No room selected", style = Type.small, color = p.faint, textAlign = TextAlign.Center)
                 } else CompositionLocalProvider(
                     LocalSidebar provides SidebarButton(if (hidden) "Show rooms" else "Hide rooms", listVisible = !hidden) { Ui.roomsHidden = !hidden },
                 ) {

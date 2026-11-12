@@ -116,8 +116,8 @@ fun FilesScreen(nav: Nav, roomId: String) {
     val activeCount = list.count { it.state == "fetching" || it.state == "queued" || it.sendingCount > 0 }
     val subtitle = when {
         activeCount > 0 -> "${list.size} files · $activeCount transferring"
-        list.isNotEmpty() -> "${list.size} in this room"
-        else -> "nothing offered yet"
+        list.isNotEmpty() -> "${list.size}"
+        else -> "none"
     }
 
     Page("Files", subtitle, onBack = nav::back) {
@@ -129,10 +129,10 @@ fun FilesScreen(nav: Nav, roomId: String) {
             ) {
                 Icon(Icons.Folder, null, tint = p.faint, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(10.dp))
-                Text("No files in this room", style = Type.body.copy(fontWeight = FontWeight.Medium), color = p.text)
+                Text("No files", style = Type.body.copy(fontWeight = FontWeight.Medium), color = p.text)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Files stay peer-to-peer: pictures sent normally have metadata stripped and are re-encoded cleanly; 'Send as-is' keeps original bytes.",
+                    "Pictures are re-encoded without metadata; Send as-is keeps the original bytes.",
                     style = Type.small, color = p.muted, textAlign = TextAlign.Center,
                 )
             }
@@ -302,7 +302,7 @@ fun fileStatusText(f: FileItem): String? = when {
     f.mine && f.sentTo != null -> "sent to ${f.sentTo}"
     f.mine -> "offered"
     f.state == "fetching" -> when (f.waiting) {
-        "verify" -> "waiting for code comparison"
+        "verify" -> "needs verify code"
         "sender" -> "waiting for sender"
         else -> "${sizeText(f.got ?: 0)} of ${sizeText(f.size)}" + (f.eta?.let { " · ${it}s left" } ?: "")
     }
