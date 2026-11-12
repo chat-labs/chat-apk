@@ -13,11 +13,13 @@ reads what a peer sent.
 ## What's in it
 
 - Rooms: make one and share its invite as text or a QR code, join with an invite or an id and
-  password, or `:call` a verified peer in your shared daily room. Direct (UDP, the BitTorrent DHT
+  password, or `/call` a verified peer in your shared daily room. Direct (UDP, the BitTorrent DHT
   over IPv4/IPv6, your network, Nostr relays when needed) or Tor.
 - Messages with delivery ticks, grouped threads, replies, `@mention` completion, direct messages,
   message timers, clickable links with IP-leak warnings, and files and pictures (with metadata
   stripping, `Send as-is`, `Save as…` export, and zoomable viewer).
+- Commands in the composer: `/` lists them (`/msg`, `/reply`, `/verify`, `/ignore`, `/call`,
+  `/timer`, `/nick`, `/net`, `/leave` and more), with what each takes.
 - Peers, with their verify codes to compare, cross-room verified and ignored keys, signing
   identities and builds, and `:move`.
 - A signing key, random, derived from a password, or imported (AGE or PGP), with secret key export.

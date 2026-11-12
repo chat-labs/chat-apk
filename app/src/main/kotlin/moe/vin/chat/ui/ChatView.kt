@@ -306,7 +306,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
             onOpenLink = { url, sender -> pendingLink = url to sender },
         )
 
-        ComposerBar(room = room, dm = dm, dmPeer = dmPeer, onCommand = { nav.go(Screen.Console(roomId)) })
+        ComposerBar(room = room, dm = dm, dmPeer = dmPeer, nav = nav)
     }
 
     pendingLink?.let { (url, sender) ->
@@ -321,8 +321,7 @@ fun ChatScreen(nav: Nav, roomId: String, dm: String?) {
 // Isolated from Messages so typing into drafts never triggers list recomposition.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-// onCommand: a :command was run, whose answer is in the console.
-private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, onCommand: () -> Unit) {
+private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, nav: Nav) {
     val p = LocalPalette.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -378,6 +377,12 @@ private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, onCommand: () ->
                     Text("@${peer.nick}", style = Type.small.copy(fontWeight = FontWeight.Medium), color = p.text)
                 }
             }
+        }
+    }
+
+    if (dm == null && replyTo == null) {
+        CommandMenu(text) { cmd ->
+            if (' ' !in text) room.drafts[thread] = "${text[0]}${cmd.name}" + if (cmd.args.isEmpty()) "" else " "
         }
     }
 
@@ -482,17 +487,17 @@ private fun ComposerBar(room: Room, dm: String?, dmPeer: Peer?, onCommand: () ->
                 .clickable(enabled = canSend, onClickLabel = "Send") {
                     val t = text.trim()
                     val mid = replyTo?.line?.mid
-                    when {
-                        dm != null -> room.dm(dm, t)
-                        mid == null && t.length >= 2 && t[0] == ':' && t[1].isLetter() -> {
-                            room.runCommand(t)
-                            onCommand()
+                    try {
+                        when {
+                            dm != null -> room.dm(dm, t)
+                            mid != null -> room.reply(mid, t)
+                            !runCommand(t, room, nav) -> room.say(t)
                         }
-                        mid != null -> room.reply(mid, t)
-                        else -> room.say(t)
+                        room.drafts.remove(thread)
+                        room.replyTo = null
+                    } catch (e: Refused) {
+                        room.error = e.message
                     }
-                    room.drafts.remove(thread)
-                    room.replyTo = null
                 },
             contentAlignment = Alignment.Center,
         ) {
