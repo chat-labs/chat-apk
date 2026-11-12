@@ -142,7 +142,7 @@ fun SettingsScreen(nav: Nav) {
                         nick,
                         { nick = it },
                         Modifier.fillMaxWidth(),
-                        placeholder = "blank: a random one in each room",
+                        placeholder = "blank: random per room",
                         onDone = { set(Hub.settings.copy(nick = nick.trim())) },
                     )
                 }
@@ -160,7 +160,7 @@ fun SettingsScreen(nav: Nav) {
             }
 
             if (match("route", "direct", "udp", "nostr", "relay", "dht", "ipv6", "lan", "local", "port", "upnp", "nat", "network", "log")) {
-                Section("New rooms reach peers")
+                Section("Route for new rooms")
                 Choice(
                     listOf("udp" to "Direct", "tor" to "Tor"),
                     s.route,
@@ -177,13 +177,13 @@ fun SettingsScreen(nav: Nav) {
                     Modifier.padding(horizontal = 20.dp),
                 )
                 Text(
-                    "Public relays carry the encrypted, padded traffic a route can't, and are where direct and Tor members meet. With Tor, they're reached through it.",
+                    "Nostr relays carry encrypted, padded traffic a route can't, and connect direct and Tor members. Reached over Tor in Tor rooms.",
                     style = Type.small,
                     color = p.muted,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
                 if (s.nostr != "off") {
-                    Field("Custom relays (optional)", Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    Field("Custom relays", Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
                         PrivateField(
                             relays,
                             { relays = it },
@@ -195,12 +195,12 @@ fun SettingsScreen(nav: Nav) {
                         )
                     }
                 }
-                Toggle("BitTorrent DHT", "How direct rooms find their peers", s.dht) { set(Hub.settings.copy(dht = it)) }
+                Toggle("BitTorrent DHT", "Peer discovery for direct rooms", s.dht) { set(Hub.settings.copy(dht = it)) }
                 if (s.dht) {
-                    Toggle("IPv6 DHT", "Also announce and look up peers over IPv6", s.ipv6) { set(Hub.settings.copy(ipv6 = it)) }
+                    Toggle("IPv6 DHT", "Announce and look up over IPv6 too", s.ipv6) { set(Hub.settings.copy(ipv6 = it)) }
                 }
-                Toggle("Local network", "Find peers on the same Wi-Fi", s.lan) { set(Hub.settings.copy(lan = it)) }
-                Toggle("Router port mapping", "Ask the router to let peers connect in", s.portmap) { set(Hub.settings.copy(portmap = it)) }
+                Toggle("Local network", "Discover peers on the LAN", s.lan) { set(Hub.settings.copy(lan = it)) }
+                Toggle("Router port mapping", "Map a port on the router for incoming peers", s.portmap) { set(Hub.settings.copy(portmap = it)) }
                 Spacer(Modifier.height(6.dp))
                 Text("NETWORK NOTES", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
                 Spacer(Modifier.height(8.dp))
@@ -230,9 +230,9 @@ fun SettingsScreen(nav: Nav) {
                 )
                 Text(
                     when (s.bridges) {
-                        "obfs4", "snowflake", "meek" -> "Tor Browser's built-in ${s.bridges} bridges, configured over Tor's control port."
-                        "custom" -> "Bridge lines (newline or ';' separated), sent over Tor's control port and never written to torrc."
-                        else -> "Straight to the Tor network."
+                        "obfs4", "snowflake", "meek" -> "Tor Browser's built-in ${s.bridges} bridges."
+                        "custom" -> "Bridge lines, one per line or ';' separated. Set over the control port, not written to torrc."
+                        else -> "No bridges."
                     },
                     style = Type.small,
                     color = p.muted,
@@ -265,10 +265,10 @@ fun SettingsScreen(nav: Nav) {
                 }
                 Toggle(
                     "Keep Tor's state",
-                    "Its guards and directory, sealed inside the vault so it connects faster next time.",
+                    "Guards and directory cache, stored in the vault.",
                     s.torKeepState,
                 ) { set(Hub.settings.copy(torKeepState = it)) }
-                RowItem("Restart tor", "With the settings above", onClick = {
+                RowItem("Restart tor", onClick = {
                     if (bridges != s.customBridges) set(Hub.settings.copy(customBridges = bridges))
                     Hub.restartTor()
                 }, leading = Icons.Onion)
@@ -283,16 +283,16 @@ fun SettingsScreen(nav: Nav) {
                     Modifier.padding(horizontal = 20.dp),
                 )
                 Spacer(Modifier.height(10.dp))
-                Text("WHAT THEY SHOW", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                Text("PREVIEW", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
                 Spacer(Modifier.height(8.dp))
                 Choice(
-                    listOf("off" to "Nothing", "nick" to "Who", "message" to "Who and what"),
+                    listOf("off" to "None", "nick" to "Sender", "message" to "Sender and text"),
                     s.preview,
                     { set(Hub.settings.copy(preview = it)) },
                     Modifier.padding(horizontal = 20.dp),
                 )
                 Text(
-                    "Never the room. While locked or on the phone's lock screen, notifications never show who or what.",
+                    "Never the room. Nothing while locked or on the lock screen.",
                     style = Type.small,
                     color = p.muted,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -303,27 +303,27 @@ fun SettingsScreen(nav: Nav) {
                 Section("Chat & privacy")
                 Toggle(
                     "Follow new messages",
-                    "Stay at the bottom as messages arrive until you scroll up",
+                    null,
                     s.followChat,
                 ) { set(Hub.settings.copy(followChat = it)) }
                 Toggle(
                     "Require peer verification",
-                    "Send nothing to a peer until you've compared verify codes with them",
+                    "Send only to peers whose verify code you compared",
                     s.verify == "required",
                 ) { set(Hub.settings.copy(verify = if (it) "required" else "optional")) }
                 Toggle(
                     "Noise in pictures",
-                    "A JPEG you send also gets subtle sensor-like noise on top of stripped metadata",
+                    "Invisible noise in cleaned pictures, so no two copies match",
                     s.noise,
                 ) { set(Hub.settings.copy(noise = it)) }
                 Toggle(
                     "Stay connected with the screen off",
-                    "Uses more battery; without it, peers may time you out",
+                    "Wake lock; without it, peers may time you out",
                     s.stayAwake,
                 ) { set(Hub.settings.copy(stayAwake = it)) }
                 Toggle(
-                    "Open kept rooms at start",
-                    "Every kept room, once chat's open",
+                    "Open kept rooms on unlock",
+                    null,
                     s.reopenKept,
                 ) { set(Hub.settings.copy(reopenKept = it)) }
             }
@@ -337,14 +337,14 @@ fun SettingsScreen(nav: Nav) {
                     Modifier.padding(horizontal = 20.dp),
                 )
                 Text(
-                    "The largest file fetched without asking again",
+                    "Larger files need confirming",
                     style = Type.small,
                     color = p.muted,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
                 Toggle(
                     "Fast transfers",
-                    "Seconds instead of minutes, but a transfer shows on the network",
+                    "Faster, but visible as a traffic burst",
                     s.fastFiles,
                 ) { set(Hub.settings.copy(fastFiles = it)) }
             }
@@ -355,7 +355,7 @@ fun SettingsScreen(nav: Nav) {
                 Column(Modifier.padding(horizontal = 20.dp)) {
                     if (id == null) {
                         Text(
-                            "Rooms are joined without one. A signing key lets peers recognise you across rooms once they've compared codes with you once, and lets you :call verified peers.",
+                            "Optional. Lets peers who verified you recognise you in every room, and enables /call.",
                             style = Type.small,
                             color = p.muted,
                         )
@@ -480,7 +480,7 @@ fun SettingsScreen(nav: Nav) {
                         }
                         Spacer(Modifier.height(8.dp))
                         Button(
-                            "Use this key",
+                            "Import",
                             onClick = {
                                 val t = keyText.trim()
                                 val k = if (t.startsWith("-----BEGIN PGP")) "pgp" else "age"
@@ -512,7 +512,7 @@ fun SettingsScreen(nav: Nav) {
                 Section("Verified keys")
                 if (Hub.verifiedKeys.isEmpty()) {
                     Text(
-                        "None yet. When you mark a peer's verify code as matching and they sign with a key, their key is remembered here across rooms.",
+                        "None. A peer's signing key is added when you confirm their verify code.",
                         style = Type.small,
                         color = p.muted,
                         modifier = Modifier.padding(horizontal = 20.dp),
@@ -547,7 +547,7 @@ fun SettingsScreen(nav: Nav) {
                     }
                     RowItem(
                         "Forget all verified keys",
-                        "Peers will need code comparison again",
+                        null,
                         onClick = { forgettingAllVerified = true },
                         leading = Icons.Trash,
                         titleColor = p.bad,
@@ -579,8 +579,8 @@ fun SettingsScreen(nav: Nav) {
                 RowItem(
                     "How it's sealed",
                     when (vMode) {
-                        Vault.Mode.BOTH -> "Passphrase and this phone"
-                        Vault.Mode.DEVICE -> "This phone only"
+                        Vault.Mode.BOTH -> "Passphrase and hardware key"
+                        Vault.Mode.DEVICE -> "Hardware key only"
                         Vault.Mode.PASSPHRASE -> "Passphrase only"
                         null -> ""
                     },
@@ -588,8 +588,8 @@ fun SettingsScreen(nav: Nav) {
                     leading = Icons.Lock,
                 )
                 RowItem(
-                    "Lock screen now",
-                    "Hides chats and previews while keeping rooms connected",
+                    "Lock screen",
+                    "Rooms stay connected",
                     onClick = { flushPendingFields(); Hub.lockUi() },
                     leading = Icons.Unlock,
                 )
@@ -605,7 +605,7 @@ fun SettingsScreen(nav: Nav) {
 
                 if (vMode?.needsPassphrase == true) {
                     Spacer(Modifier.height(14.dp))
-                    Text("SELF-DESTRUCT ON WRONG PASSPHRASE", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+                    Text("SELF-DESTRUCT", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
                     Spacer(Modifier.height(8.dp))
                     Choice(
                         listOf("0" to "Off", "3" to "3 tries", "5" to "5 tries", "10" to "10 tries"),
@@ -614,43 +614,43 @@ fun SettingsScreen(nav: Nav) {
                         Modifier.padding(horizontal = 20.dp),
                     )
                     Text(
-                        if (s.destroyTries > 0) "After ${s.destroyTries} wrong passphrases in a row, the vault and saved files erase themselves."
-                        else "No limit on wrong passphrase attempts.",
+                        if (s.destroyTries > 0) "Erases the vault and received files after ${s.destroyTries} wrong passphrases in a row."
+                        else "Off.",
                         style = Type.small,
                         color = p.muted,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                     )
                     RowItem(
                         "Shadow passphrase",
-                        if (hasShadow) "Configured · entering it erases real data and opens an empty decoy vault"
-                        else "Optional duress passphrase that destroys real data and opens an empty vault",
+                        if (hasShadow) "Set. Entering it erases the vault and opens an empty one."
+                        else "A duress passphrase: erases the vault and opens an empty one.",
                         onClick = { shadowDialog = true },
                         leading = Icons.Shield,
                     )
                 }
 
                 Toggle(
-                    "Show panic button",
-                    "Adds a quick emergency shutoff button to the top of the rooms list",
+                    "Panic button",
+                    "On the rooms list and the lock screen",
                     s.panicButton,
                 ) { set(Hub.settings.copy(panicButton = it)) }
                 if (s.panicButton) {
                     Toggle(
-                        "Panic erases vault",
-                        "Also permanently deletes the vault, histories, keys and files on panic",
+                        "Panic erases the vault",
+                        "And received files. Off: panic only seals it.",
                         s.panicWipe,
                     ) { set(Hub.settings.copy(panicWipe = it)) }
                 }
 
                 RowItem(
                     "Quit chat",
-                    "Every room goes offline or leaves, tor stops, and the vault is sealed again",
+                    "Leaves or goes offline in every room, stops tor, seals the vault",
                     onClick = { flushPendingFields(); Hub.quit() },
                     leading = Icons.Close,
                 )
                 RowItem(
                     "Erase everything",
-                    "Every kept room, history, file and the signing key",
+                    "The vault and received files",
                     onClick = { erasing = true },
                     leading = Icons.Trash,
                     titleColor = p.bad,
@@ -694,7 +694,7 @@ fun SettingsScreen(nav: Nav) {
 
     if (dropping) Confirm(
         "Stop signing?",
-        "Open and new rooms stop signing. The key is deleted from the vault; export a copy first if you want it back.",
+        "Rooms stop signing. The key is deleted from the vault; export it first to keep it.",
         "Stop signing",
         danger = true,
         onConfirm = { dropping = false; Hub.dropIdentity() },
@@ -703,7 +703,7 @@ fun SettingsScreen(nav: Nav) {
 
     if (forgettingAllVerified) Confirm(
         "Forget all verified keys?",
-        "Every remembered peer key is forgotten, and you'll need to compare verify codes with them again.",
+        "Verify codes have to be compared again.",
         "Forget all",
         danger = true,
         onConfirm = { forgettingAllVerified = false; Hub.forgetAllVerified() },
@@ -712,7 +712,7 @@ fun SettingsScreen(nav: Nav) {
 
     if (erasing) Confirm(
         "Erase everything?",
-        "Every kept room, history, file and the signing key go for good, and chat starts again from the beginning.",
+        "Deletes the vault (kept rooms, histories, settings, signing key) and received files.",
         "Erase",
         danger = true,
         onConfirm = { erasing = false; Hub.eraseEverything() },
@@ -777,7 +777,7 @@ private fun DeriveKeyDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Deterministically derives your ${kind.uppercase()} key using Argon2id from this password and this phone's ID, so the same inputs always produce the same key.",
+                    "Argon2id over the password and this phone's ID: the same inputs give the same key.",
                     style = Type.small,
                     color = p.muted,
                 )
@@ -788,7 +788,7 @@ private fun DeriveKeyDialog(
                     PrivateField(again, { again = it }, Modifier.fillMaxWidth(), password = true)
                 }
                 if (currentNick.isNotBlank()) {
-                    Toggle("Bind to nick ($currentNick)", "Different nicks derive different keys from the same password", withNick) { withNick = it }
+                    Toggle("Bind to nick ($currentNick)", "The nick is part of the input", withNick) { withNick = it }
                 }
             }
         },
@@ -827,7 +827,7 @@ private fun ExportKeyDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Unencrypted secret key: anyone who gets this can sign as you in any room. Keep it somewhere sealed.",
+                    "Unencrypted. Anyone with it can sign as you.",
                     style = Type.small,
                     color = p.warn,
                 )
@@ -871,7 +871,7 @@ private fun ShadowDialog(hasExisting: Boolean, onDone: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "If someone forces you to unlock chat, entering this passphrase permanently erases your real rooms, histories and keys, and opens an empty vault instead.",
+                    "Entering it at unlock erases the vault and opens an empty one.",
                     style = Type.small,
                     color = p.muted,
                 )

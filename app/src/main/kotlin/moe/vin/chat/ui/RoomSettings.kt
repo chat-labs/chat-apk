@@ -73,7 +73,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding()) {
             if (!room.isCall) {
                 Spacer(Modifier.height(18.dp))
-                Field("Name, for you only", Modifier.padding(horizontal = 20.dp)) {
+                Field("Local name", Modifier.padding(horizontal = 20.dp)) {
                     PrivateField(
                         label,
                         { label = it },
@@ -85,20 +85,20 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
 
                 Section("Kept")
                 if (entry == null) {
-                    Toggle("Keep this room", "In the vault, to come back to", false) { Hub.keepRoom(room, history = false) }
+                    Toggle("Keep this room", "Stored in the vault", false) { Hub.keepRoom(room, history = false) }
                 } else {
-                    Toggle("Keep its history", "Sealed in the vault. Everyone here is told you keep one.", room.history) { Hub.setHistory(room, it) }
+                    Toggle("Keep its history", "Stored in the vault. Peers see that you keep history.", room.history) { Hub.setHistory(room, it) }
                     if (room.history || room.items.any { it.old }) {
                         RowItem(
                             "Clear kept history",
-                            "Deletes saved messages for this room while keeping the room itself",
+                            null,
                             onClick = { clearingHistory = true },
                             leading = Icons.Trash,
                         )
                     }
                     RowItem(
                         "Forget this room",
-                        "Leaves it, and deletes its history and files",
+                        "Leaves it, and deletes its history and received files",
                         onClick = { forgetting = true },
                         leading = Icons.Trash,
                         titleColor = p.bad,
@@ -109,18 +109,18 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             Section("Chat")
             Toggle(
                 "Follow new messages",
-                "Stay at the bottom as messages arrive until you scroll up",
+                null,
                 Hub.settings.followChat,
             ) { Hub.updateSettings(Hub.settings.copy(followChat = it)) }
             RowItem(
-                "Files in this room",
-                if (room.files.isEmpty()) "None offered yet" else "${room.files.size} offered · send, view or save",
+                "Files",
+                if (room.files.isEmpty()) "None" else "${room.files.size}",
                 onClick = { nav.go(Screen.Files(roomId)) },
                 leading = Icons.Folder,
             )
             RowItem(
-                "Links in this room",
-                if (roomLinks.isEmpty()) "No links shared yet" else "${roomLinks.size} shared",
+                "Links",
+                if (roomLinks.isEmpty()) "None" else "${roomLinks.size}",
                 onClick = if (roomLinks.isNotEmpty()) ({ showLinks = true }) else null,
                 leading = Icons.Link,
             )
@@ -134,9 +134,9 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     if (t != null && t.seconds > 0)
-                        "Messages go from every screen that keeps to it after ${durationText(t.seconds)}; ${t.who ?: "someone"} asked for it. It's a request: a screenshot or a modified chat can keep anything."
+                        "Set by ${t.who ?: "a peer"}. Clients delete messages after ${durationText(t.seconds)}; a screenshot or a modified client can keep them."
                     else
-                        "Messages here stay until the room closes, or for as long as a history keeps them.",
+                        "Messages stay until the room closes, or in a kept history.",
                     style = Type.small,
                     color = p.muted,
                 )
@@ -145,8 +145,8 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             if (!room.isCall) {
                 Section("Invite")
                 RowItem(
-                    "Show the invite",
-                    "Its QR code and text, to send to someone",
+                    "Invite",
+                    "QR code and text",
                     onClick = { nav.go(Screen.Invite(roomId)) },
                     leading = Icons.Qr,
                 )
@@ -169,14 +169,14 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             Spacer(Modifier.height(6.dp))
             RowItem(
                 "Console",
-                "What chat says about this room, Tor and the network, and its commands",
+                "Log and commands",
                 onClick = { nav.go(Screen.Console(roomId)) },
                 leading = Icons.Console,
             )
             if (info?.route == "tor") {
                 RowItem(
                     "New Tor circuits",
-                    "And a new onion address for peers to reach you at",
+                    "And a new onion address",
                     onClick = { room.newCircuits() },
                     leading = Icons.Onion,
                 )
@@ -193,7 +193,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
                 Section("Move")
                 RowItem(
                     "Move to a new room",
-                    "With the peers whose codes you compared. Everyone else stays here, and isn't told where you went.",
+                    "With the peers whose code you compared. The rest aren't told where.",
                     onClick = { room.planMove(); moving = true },
                     leading = Icons.Move,
                 )
@@ -202,8 +202,8 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             Hairline()
             RowItem(
                 if (entry != null) "Go offline" else "Leave the room",
-                if (entry != null) "Peers are told you went offline; open it again from the list"
-                else "It's gone once you leave, unless someone sends you the invite again",
+                if (entry != null) "Peers see you go offline"
+                else "Rejoining needs the invite",
                 onClick = { Hub.close(room); nav.home() },
                 leading = Icons.Close,
             )
@@ -213,7 +213,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
 
     if (clearingHistory) Confirm(
         "Clear kept history?",
-        "Saved messages from earlier sessions of this room are deleted from the vault.",
+        "Deletes this room's history from the vault.",
         "Clear",
         danger = true,
         onConfirm = { clearingHistory = false; Hub.clearRoomHistory(room) },
@@ -222,7 +222,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
 
     if (forgetting && entry != null) Confirm(
         "Forget this room?",
-        "You leave it, and its history and the files you saved from it are deleted.",
+        "Leaves it, and deletes its history and received files.",
         "Forget",
         danger = true,
         onConfirm = { forgetting = false; Hub.forget(entry); nav.home() },
@@ -232,9 +232,9 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
     val plan = room.movePlan
     if (moving && plan != null) Confirm(
         "Move the room?",
-        if (plan.coming == 0) "Nobody can come yet: compare verify codes with them first." +
+        if (plan.coming == 0) "Nobody can come: compare verify codes first." +
             (if (plan.leftNames.isNotBlank()) " Not coming: ${plan.leftNames}." else "")
-        else "To a new room, with ${plan.comingNames}, each asked first." +
+        else "With ${plan.comingNames}, each asked first." +
             (if (plan.left > 0) " Staying behind: ${plan.leftNames}." else ""),
         if (plan.coming == 0) "OK" else "Move",
         onConfirm = { moving = false; room.movePlan = null; if (plan.coming > 0) room.answerMove(true) },
@@ -245,7 +245,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
         AlertDialog(
             onDismissRequest = { showLinks = false },
             containerColor = p.surface,
-            title = { Text("Links in this room", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
+            title = { Text("Links", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for ((url, who) in roomLinks) {
@@ -278,7 +278,7 @@ fun RoomSettingsScreen(nav: Nav, roomId: String) {
             containerColor = p.surface,
             title = { Text("UDP port", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
             text = {
-                Field("Port (0 for any free port)") {
+                Field("Port (0: any)") {
                     PrivateField(portText, { portText = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), mono = true, focus = true)
                 }
             },

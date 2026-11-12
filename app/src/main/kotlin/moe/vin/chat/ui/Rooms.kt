@@ -111,7 +111,7 @@ fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
             ) {
                 Icon(Icons.Share, null, tint = p.accent, modifier = Modifier.size(18.dp))
                 Text(
-                    if (Shared.file != null) "Pick a room to send the file to" else "Pick a room for the text",
+                    if (Shared.file != null) "Send file to…" else "Send text to…",
                     style = Type.small,
                     color = p.text,
                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
@@ -126,10 +126,10 @@ fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No rooms yet", style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = p.text)
+                Text("No rooms", style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = p.text)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Make one and send its invite over a channel you trust, join one with an invite, or call someone whose signing key you've verified.",
+                    "Create one, join with an invite, or call a verified key.",
                     style = Type.small,
                     color = p.muted,
                     textAlign = TextAlign.Center,
@@ -170,12 +170,12 @@ fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
 
     if (panicAsk) {
         Confirm(
-            title = if (Hub.settings.panicWipe) "Panic and erase everything?" else "Panic shutoff?",
+            title = if (Hub.settings.panicWipe) "Panic and erase?" else "Panic?",
             text = if (Hub.settings.panicWipe)
-                "Every room and Tor process is killed on the spot without network goodbyes, and the vault, histories, keys and saved files are erased."
+                "Kills every room and tor without goodbyes, clears notifications and the clipboard, and deletes the vault (kept rooms, histories, settings, keys) and received files."
             else
-                "Every room and Tor process is killed on the spot without network goodbyes, notifications and clipboard are cleared, and the vault is sealed.",
-            action = if (Hub.settings.panicWipe) "Kill & erase" else "Shut off now",
+                "Kills every room and tor without goodbyes, clears notifications and the clipboard, and seals the vault. Nothing kept is erased.",
+            action = if (Hub.settings.panicWipe) "Erase" else "Panic",
             danger = true,
             onConfirm = { panicAsk = false; Hub.panic() },
             onDismiss = { panicAsk = false },
@@ -185,7 +185,7 @@ fun RoomsScreen(nav: Nav, twoPane: Boolean = false) {
     forgetting?.let { entry ->
         Confirm(
             title = "Forget ${entry.title}?",
-            text = "You leave it, and its history and the files you saved from it are deleted.",
+            text = "Leaves it, and deletes its history and received files.",
             action = "Forget",
             danger = true,
             onConfirm = {
@@ -357,10 +357,10 @@ private fun RenameDialog(initial: String, onSave: (String) -> Unit, onDismiss: (
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
-        title = { Text("Name for this room", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
+        title = { Text("Rename", style = Type.title.copy(fontSize = Type.body.fontSize * 1.15f), color = p.text) },
         text = {
-            Field("Only shown on this phone") {
-                PrivateField(name, { name = it }, Modifier.fillMaxWidth(), placeholder = "blank for room id", focus = true, onDone = { onSave(name.trim()) })
+            Field("Local name") {
+                PrivateField(name, { name = it }, Modifier.fillMaxWidth(), placeholder = "blank: room id", focus = true, onDone = { onSave(name.trim()) })
             }
         },
         confirmButton = {
@@ -392,14 +392,14 @@ private fun CallDialog(
         text = {
             if (!hasKey) {
                 Text(
-                    "Calling works out a shared daily room from your signing key and theirs, with no invite needed. Make or import a signing key in Settings first.",
+                    "Needs a signing key: Settings.",
                     style = Type.small,
                     color = p.muted,
                 )
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Opens today's shared room with them (:call @nick). When they do the same, you meet there automatically.",
+                        "Opens today's room derived from both signing keys (/call NICK).",
                         style = Type.small,
                         color = p.muted,
                     )
@@ -411,7 +411,7 @@ private fun CallDialog(
                                 .clickable {
                                     val r = Hub.call(peer, route)
                                     if (r != null) onStarted(r)
-                                    else Toast.makeText(ctx, "Couldn't start call", Toast.LENGTH_SHORT).show()
+                                    else Toast.makeText(ctx, "Call failed", Toast.LENGTH_SHORT).show()
                                 }
                                 .padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -454,12 +454,12 @@ private fun RoomOptions(
 ) {
     val p = LocalPalette.current
     var showAdvanced by remember { mutableStateOf(port.isNotBlank() || peers.isNotBlank()) }
-    Text("HOW IT REACHES PEERS", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
+    Text("ROUTE", style = Type.section, color = p.faint, modifier = Modifier.padding(horizontal = 20.dp))
     Spacer(Modifier.height(10.dp))
     Choice(listOf("udp" to "Direct", "tor" to "Tor"), route, onRoute, Modifier.padding(horizontal = 20.dp))
     Spacer(Modifier.height(8.dp))
     Text(
-        if (route == "udp") "Peers see your IP address." else "Onion services hide your IP address; connecting takes longer.",
+        if (route == "udp") "Peers see your IP address." else "Hides your IP address; slower to connect.",
         style = Type.small,
         color = p.muted,
         modifier = Modifier.padding(horizontal = 20.dp),
@@ -467,26 +467,26 @@ private fun RoomOptions(
     Spacer(Modifier.height(10.dp))
     Toggle(
         "Keep this room",
-        "In the vault, to come back to. Peers are told you went offline when you close it, not that you left.",
+        "Stored in the vault. Closing it shows peers you went offline, not that you left.",
         keep,
         onKeep,
     )
     if (keep) {
-        Toggle("Keep its history", "Sealed in the vault. Everyone in the room is told you keep one.", history, onHistory)
+        Toggle("Keep its history", "Stored in the vault. Peers see that you keep history.", history, onHistory)
     }
     if (route == "udp") {
         Text(
-            if (showAdvanced) "Hide direct UDP options" else "Direct UDP port & known peers…",
+            if (showAdvanced) "Hide UDP options" else "UDP port and known peers",
             style = Type.small,
             color = p.accent,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).clickable { showAdvanced = !showAdvanced },
         )
         if (showAdvanced) {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Field("Local UDP port (optional)") {
+                Field("UDP port") {
                     PrivateField(port, onPort, Modifier.fillMaxWidth(), placeholder = "blank: random port", mono = true)
                 }
-                Field("Known peer addresses (optional)") {
+                Field("Known peers") {
                     PrivateField(peers, onPeers, Modifier.fillMaxWidth(), placeholder = "host:port, one per line", multiLine = true, mono = true)
                 }
             }
@@ -516,12 +516,12 @@ fun NewRoomScreen(nav: Nav) {
     Page("New room", onBack = if (showBack) nav::back else null) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding()) {
             Spacer(Modifier.height(18.dp))
-            Field("Name, for you only", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(label, { label = it }, Modifier.fillMaxWidth(), placeholder = "nobody else sees it")
+            Field("Local name", Modifier.padding(horizontal = 20.dp)) {
+                PrivateField(label, { label = it }, Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(14.dp))
             Field("Room id", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(id, { id = it }, Modifier.fillMaxWidth(), placeholder = "blank: made up as it opens", mono = true)
+                PrivateField(id, { id = it }, Modifier.fillMaxWidth(), placeholder = "blank: random", mono = true)
             }
             Spacer(Modifier.height(14.dp))
             Field("Password", Modifier.padding(horizontal = 20.dp)) {
@@ -542,7 +542,7 @@ fun NewRoomScreen(nav: Nav) {
             )
             Spacer(Modifier.height(14.dp))
             Text(
-                "A random id and password in words, made up by chat: keep them or set your own. The invite holds both: send it over a channel you trust, as anyone who has it can join.",
+                "Anyone with the invite (id and password) can join. Send it over a trusted channel.",
                 style = Type.small,
                 color = LocalPalette.current.muted,
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -550,7 +550,7 @@ fun NewRoomScreen(nav: Nav) {
             Spacer(Modifier.height(16.dp))
         }
         BottomBar {
-            Button("Make the room", {
+            Button("Create", {
                 val portNum = port.trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 0
                 val room = Hub.start(
                     room = id.trim().ifEmpty { null },
@@ -588,7 +588,7 @@ fun JoinScreen(nav: Nav, start: String) {
     var peers by remember { mutableStateOf("") }
     val trimmedInvite = invite.trim()
     val ok = if (byId) id.isNotBlank() else trimmedInvite.startsWith("chat:")
-    Page("Join a room", onBack = if (showBack) nav::back else null) {
+    Page("Join", onBack = if (showBack) nav::back else null) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding()) {
             Spacer(Modifier.height(18.dp))
             if (!byId) {
@@ -615,7 +615,7 @@ fun JoinScreen(nav: Nav, start: String) {
                     PrivateField(invite, { invite = it }, Modifier.fillMaxWidth(), placeholder = "chat:…", mono = true)
                 }
                 Text(
-                    "Use the room's id and password instead",
+                    "Use id and password",
                     style = Type.small,
                     color = p.accent,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp).clickable { byId = true },
@@ -633,18 +633,18 @@ fun JoinScreen(nav: Nav, start: String) {
                 }
                 Spacer(Modifier.height(12.dp))
                 Field("Password", Modifier.padding(horizontal = 20.dp)) {
-                    PrivateField(password, { password = it }, Modifier.fillMaxWidth(), placeholder = "blank for none")
+                    PrivateField(password, { password = it }, Modifier.fillMaxWidth(), placeholder = "blank: none")
                 }
                 Text(
-                    "Use an invite instead",
+                    "Use invite",
                     style = Type.small,
                     color = p.accent,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp).clickable { byId = false },
                 )
             }
             Spacer(Modifier.height(10.dp))
-            Field("Name, for you only", Modifier.padding(horizontal = 20.dp)) {
-                PrivateField(label, { label = it }, Modifier.fillMaxWidth(), placeholder = "nobody else sees it")
+            Field("Local name", Modifier.padding(horizontal = 20.dp)) {
+                PrivateField(label, { label = it }, Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(22.dp))
             RoomOptions(
@@ -685,8 +685,8 @@ fun InviteScreen(nav: Nav, roomId: String) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
             if (info == null) {
                 Text(
-                    if (room?.status == Status.FAILED) "The room didn't open: ${room.error}"
-                    else "The invite shows once the room is open…",
+                    if (room?.status == Status.FAILED) "Failed: ${room.error}"
+                    else "Opening…",
                     style = Type.body,
                     color = p.muted,
                 )
@@ -713,7 +713,7 @@ fun InviteScreen(nav: Nav, roomId: String) {
             }
             Spacer(Modifier.height(18.dp))
             Text(
-                "It holds the room's id and password, so anyone who has it can join. Send it over a channel you trust, then compare verify codes with whoever joins.",
+                "Anyone with it can join. Send it over a trusted channel, and compare verify codes with whoever joins.",
                 style = Type.small,
                 color = p.muted,
             )
@@ -733,7 +733,7 @@ fun InviteScreen(nav: Nav, roomId: String) {
             Text(info.password.ifEmpty { "(none)" }, style = Type.code, color = p.text)
         }
         BottomBar {
-            Button("Go to the room", { nav.replace(Screen.Chat(roomId)) }, Modifier.fillMaxWidth())
+            Button("Open room", { nav.replace(Screen.Chat(roomId)) }, Modifier.fillMaxWidth())
         }
     }
 }
