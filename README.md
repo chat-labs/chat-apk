@@ -41,6 +41,13 @@ reads what a peer sent.
 - chat and tor run with an empty environment, in folders only this app can read, and tor quits if
   the app is gone.
 
+## Installing
+
+The APKs are on the [releases](https://github.com/chat-labs/chat-apk/releases) page, for Android 9
+or later. To get them and their updates with [Obtainium](https://github.com/ImranR98/Obtainium),
+add `https://github.com/chat-labs/chat-apk` as an app and turn on "Include prereleases": every
+release is a pre-release for now, signed with the local test key (see below).
+
 ## Building
 
 You need a JDK (17 or later), rustup, [just](https://github.com/casey/just), and chat's source

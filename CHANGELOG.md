@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2
+
+- Tor is the default way rooms reach peers, for new settings and on the first screen.
+- A new room starts with a random id and password, made up by chat, to keep, change or clear.
+- The console is apart from the chat: chat's notes, its log and errors are behind a button by the
+  chat's title, with a line for chat's commands. Warnings still show in the chat too.
+- The icon's background is a white to silver gradient.
+- Releases can be followed with Obtainium (see the README).
+
+Still a pre-release signed with the local test key, so it installs over 0.1.1.
+
 ## 0.1.1
 
 - Tor rooms open: chat-core took the challenge the app's tor sends when a room logs in to it as
