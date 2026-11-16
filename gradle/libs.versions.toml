@@ -6,7 +6,7 @@ activity = "1.13.0"
 core = "1.19.1"
 lifecycle = "2.11.0"
 window = "1.5.1"
-bouncycastle = "1.86"
+bouncycastle = "1.87"
 
 [libraries]
 androidx-core = { module = "androidx.core:core-ktx", version.ref = "core" }
